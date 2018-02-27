@@ -1,5 +1,46 @@
 #一些杂项
 import tensorflow as tf
+import tensorflow.contrib.distributions as tfd
+
+#使用tf的内建类来进行二维Gaussian Map的制作
+'''
+keypoint_coordinates:关节点的坐标，[21,2]先height再width
+map_size:Gaussian Map的大小，[h,w]
+sigma:标准差，因为是制作二维Gaussian Map,两个维度间的坐标值相互独立(TODO:其实应该是有联系的),故协方差为0，相同维度间的方差取相同。
+'''
+def make_gt_heatmap(keypoint_coordinates, map_size, sigma):
+    with tf.name_scope('ground_truth_heatmap'):
+        sigma=tf.cast(sigma,tf.float32)
+        dims=keypoint_coordinates.get_shape().as_list()
+        #[2,2]
+        covariance=tf.eye(2,name='covariance')*sigma
+        #[21,2,2]
+        covariance_batch=tf.tile(tf.expand_dims(covariance,0),[dims[0],1,1],name='covariance_batch')
+        #keypoint_coordinates即为中心位置，即均值点
+        pdf_mvn=tfd.MultivariateNormalFullCovariance(keypoint_coordinates,covariance,name='2dim-normal-distribution')
+        #以下几步生成了一个[256,256,2]的三维坐标枚举，即从[0,0]到[255,255]
+        h=tf.range(map_size[0])
+        w=tf.range(map_size[1])
+        h=tf.tile(tf.expand_dims(h,-1),[1,map_size[1]])
+        w=tf.reshape(tf.tile(w,[map_size[0]]),[map_size[0],map_size[1]])
+        #[map_size[0],map_size[1],2]
+        coor=tf.concat([tf.expand_dims(h,-1),tf.expand_dims(w,-1)],-1)
+        #[map_size[0]*map_size[1],2]
+        coor=tf.reshape(coor,[map_size[0]*map_size[1],2])
+        #[map_size[0]*map_size[1],batch,2]
+        coor_batch=tf.tile(tf.expand_dims(coor,1),[1,dims[0],1])
+        #gt_heamap:[map_size[0]*map_size[1],batch]
+        gt_heatmap_batch=pdf_mvn.prob(coor_batch)
+        #[map_size[0],map_size[1],batch]
+        gt_heatmap_batch=tf.reshape(gt_heatmap_batch,[map_size[0],map_size[1],dims[0]],'ground_truth_heatmap_batch')
+        #背景
+        background=tf.expand_dims(tf.zeros([map_size[0],map_size[1]]),-1)
+
+        gt_heatmap_batch=tf.concat([gt_heatmap_batch,background],-1)
+
+
+
+
 
 
 def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):

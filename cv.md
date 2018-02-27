@@ -67,7 +67,7 @@ tf.nn.batch_normalization
 1、tf.expande_dims(input,axis,name),在扩展一第axis维，大小为1。
 2、tf.image.crop\_and\_resize(image,boxes,box\_ind,crop\_size,name),先从原图中cropboxes指定大小的crop\_image,再进行resize到crop\_size大小。其中boxes为一[batch\_size,4]的矩阵，第1维4个依次为左上角y，左上角x，右下角y，右下角x，并且是归一化后的坐标(即每个原值都除了原图像的height或width),box\_ind为[batch\_size],指定对应的第几张图像，crop\_size指定resize之后的图像大小。
 3、tf.tile(input,multiples)将input的每一维重复multiples次形成一个新的tensor,ex:
-    input:[a,b,c,d],multiples=[1,2,3,4],output:[a,b,c,d,a,b,c,d]
+    input:[a,b,c,d],multiples=[2],output:[a,b,c,d,a,b,c,d]
     input:[[2,4],[1,2]] ,multiples=[2,2],output:[[2,4,2,4],[2,4,2,4],[1,2,1,2],[1,2,1,2]] 2x2变成了4x4，注意,multiples的长度必须和input的维度相同。
 4、Tensor.set\_shape(shape),由于tensorflow是图计算的模型，所以在真正计算之前并不知道tensor的真正大小，set\_shape用以提供额外的shape信息。
 5、Q：python的staticmethod中的变量？
@@ -112,3 +112,5 @@ tf.nn.batch_normalization
 
 2017.02.27
 1、xshell从本机向服务器上传文件：rz 文件名；从服务器向本机下载文件：sz 文件名。
+2、二维gaussian kernel制作(tensorflow)：tf.contrib.distributions.MultivariateNormalFullCovariance类，需要的参数：各个维度的均值，协方差矩阵。得到一个概率密度分布，再使用prob方法得到对应具体值时的值。
+    note:inv 代表矩阵求逆;det代表求矩阵的值。

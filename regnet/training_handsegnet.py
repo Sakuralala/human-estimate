@@ -4,16 +4,13 @@ from __future__ import print_function, unicode_literals
 import tensorflow as tf
 import os
 import sys
+from params import *
 
 from BinaryDbReader import BinaryDbReader
 #from utils import LearningRateScheduler
 from regnet import total_loss_of_HALNet
 # training parameters
-train_para={  'max_iter': 200000,
-              'show_lr_freq': 1000,
-              'show_loss_freq': 500,
-              'snapshot_freq': 5000,
-              'snapshot_dir': 'snapshots_handsegnet'}
+
 
 dataset = BinaryDbReader(mode='training',
                          batch_size=8, shuffle=True,

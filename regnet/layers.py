@@ -3,13 +3,8 @@
 import tensorflow as tf
 import numpy as np
 import os
+from params import *
 
-MOVING_AVERAGE_DECAY = 0.9997
-BN_DECAY = MOVING_AVERAGE_DECAY
-BN_EPSILON = 0.001
-CONV_WEIGHT_DECAY = 0.00004
-CONV_WEIGHT_STDDEV = 0.1
-NUM_OF_HEATMAPS=22
 
 def residual_block(input,
                    stride,

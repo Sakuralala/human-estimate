@@ -5,8 +5,9 @@ import os
 import sys
 
 from BinaryDbReader import BinaryDbReader
+from hourglass import HourglassModel
 #from utils import LearningRateScheduler
-from regnet import total_loss_of_HALNet
+
 # training parameters
 train_para={  'max_iter': 200000,
               'show_lr_freq': 1000,
@@ -16,7 +17,7 @@ train_para={  'max_iter': 200000,
 
 dataset = BinaryDbReader(mode='training',
                          batch_size=8, shuffle=True,
-                         hue_aug=True,hand_crop=False)
+                         hue_aug=True,hand_crop=True)
 
 # build network graph
 data = dataset.get()
@@ -26,15 +27,12 @@ gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
 sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 tf.train.start_queue_runners(sess=sess)
 
-#Loss [B,320,320]  [B,320,320]
-loss=total_loss_of_HALNet(data['image'],data['gaussian_map'])
+#Model TODO:22改为变量
+model=HourglassModel(22)
+model.build_model(data['image'],data['gaussian_map'])
 
-#Variables
-trainable_variables=[var for var in tf.trainable_variables() if 'fixed_weights' not in var.name]
-#138 142
-#print(len(trainable_variables),len(tf.trainable_variables()))
-#for var in trainable_variables:
-#	print(var.name)
+#Loss [B,320,320]  [B,320,320]
+loss=sum(model.loss)
 # Solver
 global_step = tf.Variable(0, trainable=False, name="global_step")
 #lr_scheduler = LearningRateScheduler(values=train_para['lr'], steps=train_para['lr_iter'])

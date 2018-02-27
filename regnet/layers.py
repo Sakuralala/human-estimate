@@ -79,7 +79,7 @@ def batch_normalization(input,
 
     #训练时更新，测试时使用平均值
     mean, variance = tf.cond(
-        tf.reshape(is_train, []), mean_var_update,
+        tf.cast(is_train, tf.bool), mean_var_update,
         lambda: (ema.average(mean), ema.average(variance)))
     normalized = tf.nn.batch_normalization(input, mean, variance, offset,
                                            scale, 10e-5, name)

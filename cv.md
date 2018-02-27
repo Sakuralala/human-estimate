@@ -109,3 +109,6 @@ tf.nn.batch_normalization
 
 2017.02.02
 1、二维guassian核函数中sigma似乎对loss影响非常大，sigma一大那么loss也变大，且越来越难下降。
+
+2017.02.27
+1、xshell从本机向服务器上传文件：rz 文件名；从服务器向本机下载文件：sz 文件名。

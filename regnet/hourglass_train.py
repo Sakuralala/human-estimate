@@ -1,3 +1,4 @@
+#使用hourglass结构来进行关节点预测
 from __future__ import print_function, unicode_literals
 
 import tensorflow as tf

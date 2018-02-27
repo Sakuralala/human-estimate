@@ -37,7 +37,7 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
         keypoint_coordinates = tf.cast(keypoint_coordinates, tf.float32)
         keypoint_number = keypoint_coordinates.get_shape().as_list()[0]
         Y = tf.reshape(
-            tf.tile(tf.range(map_size[1]), [map_size[0]]), [map_size[0], map_size[1]])
+            tf.tile(tf.range(map_size[1]), [map_size[0]]), [map_size[1], map_size[0]])
         X = tf.transpose(Y)
         #[256,256,21]
         X = tf.tile(tf.expand_dims(X, -1), [1, 1, keypoint_number])
@@ -47,9 +47,13 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
         Y_relative = tf.cast(Y,tf.float32) - keypoint_coordinates[:, 0]
         #每个gaussian_map上仅坐标等于关节点坐标的位置distance为0，强度最大，其他位置按照正态分布递减
         distance = tf.square(X_relative) + tf.square(Y_relative)
-        gaussian_map=tf.exp(-distance/tf.square(sigma))*tf.cast(cond,tf.float32)
+        gaussian_map=tf.exp(-distance/sigma)*tf.cast(cond,tf.float32)
         #背景 [256,256,1]
-        background_gaussian_map=tf.expand_dims(tf.zeros([map_size[0],map_size[1]]),-1)
+        #background_gaussian_map=tf.expand_dims(tf.zeros([map_size[0],map_size[1]]),-1)
+        background_gaussian_map=tf.expand_dims(tf.ones([map_size[0],map_size[1]]),-1)
+	#[size,size,1]
+        total=tf.reduce_sum(gaussian_map,-1,keep_dims=True)      
+        background_gaussian_map-=total
         #[256,256,22]
         gaussian_map=tf.concat([gaussian_map,background_gaussian_map],-1)
 

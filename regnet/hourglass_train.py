@@ -20,7 +20,7 @@ sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 tf.train.start_queue_runners(sess=sess)
 
 #Model TODO:22改为变量
-model = HourglassModel(22)
+model = HourglassModel(NUM_OF_HEATMAPS)
 model.build_model(data['image'], data['gaussian_map'])
 
 #Loss [B,320,320]  [B,320,320]

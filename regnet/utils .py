@@ -8,39 +8,43 @@ keypoint_coordinates:关节点的坐标，[21,2]先height再width
 map_size:Gaussian Map的大小，[h,w]
 sigma:标准差，因为是制作二维Gaussian Map,两个维度间的坐标值相互独立(TODO:其实应该是有联系的),故协方差为0，相同维度间的方差取相同。
 '''
+
+
 def make_gt_heatmap(keypoint_coordinates, map_size, sigma):
     with tf.name_scope('ground_truth_heatmap'):
-        sigma=tf.cast(sigma,tf.float32)
-        dims=keypoint_coordinates.get_shape().as_list()
+        sigma = tf.cast(sigma, tf.float32)
+        dims = keypoint_coordinates.get_shape().as_list()
         #[2,2]
-        covariance=tf.eye(2,name='covariance')*sigma
+        covariance = tf.eye(2, name='covariance') * sigma
         #[21,2,2]
-        covariance_batch=tf.tile(tf.expand_dims(covariance,0),[dims[0],1,1],name='covariance_batch')
+        covariance_all_jt = tf.tile(
+            tf.expand_dims(covariance, 0), [dims[0], 1, 1],
+            name='covariance_all_jt')
         #keypoint_coordinates即为中心位置，即均值点
-        pdf_mvn=tfd.MultivariateNormalFullCovariance(keypoint_coordinates,covariance,name='2dim-normal-distribution')
+        pdf_mvn = tfd.MultivariateNormalFullCovariance(
+            keypoint_coordinates, covariance, name='2dim-normal-distribution')
         #以下几步生成了一个[256,256,2]的三维坐标枚举，即从[0,0]到[255,255]
-        h=tf.range(map_size[0])
-        w=tf.range(map_size[1])
-        h=tf.tile(tf.expand_dims(h,-1),[1,map_size[1]])
-        w=tf.reshape(tf.tile(w,[map_size[0]]),[map_size[0],map_size[1]])
+        h = tf.range(map_size[0])
+        w = tf.range(map_size[1])
+        h = tf.tile(tf.expand_dims(h, -1), [1, map_size[1]])
+        w = tf.reshape(tf.tile(w, [map_size[0]]), [map_size[0], map_size[1]])
         #[map_size[0],map_size[1],2]
-        coor=tf.concat([tf.expand_dims(h,-1),tf.expand_dims(w,-1)],-1)
+        coor = tf.concat([tf.expand_dims(h, -1), tf.expand_dims(w, -1)], -1)
         #[map_size[0]*map_size[1],2]
-        coor=tf.reshape(coor,[map_size[0]*map_size[1],2])
-        #[map_size[0]*map_size[1],batch,2]
-        coor_batch=tf.tile(tf.expand_dims(coor,1),[1,dims[0],1])
-        #gt_heamap:[map_size[0]*map_size[1],batch]
-        gt_heatmap_batch=pdf_mvn.prob(coor_batch)
-        #[map_size[0],map_size[1],batch]
-        gt_heatmap_batch=tf.reshape(gt_heatmap_batch,[map_size[0],map_size[1],dims[0]],'ground_truth_heatmap_batch')
-        #背景
-        background=tf.expand_dims(tf.zeros([map_size[0],map_size[1]]),-1)
-
-        gt_heatmap_batch=tf.concat([gt_heatmap_batch,background],-1)
-
-
-
-
+        coor = tf.reshape(coor, [map_size[0] * map_size[1], 2])
+        #[map_size[0]*map_size[1],all_jt,2]
+        coor_all_jt = tf.tile(tf.expand_dims(coor, 1), [1, dims[0], 1])
+        #gt_heamap:[map_size[0]*map_size[1],all_jt]
+        gt_heatmap_all_jt = pdf_mvn.prob(coor_all_jt)
+        #[map_size[0],map_size[1],all_jt]
+        gt_heatmap_all_jt = tf.reshape(gt_heatmap_all_jt,
+                                      [map_size[0], map_size[1], dims[0]],
+                                      'ground_truth_heatmap_all_jt')
+        #背景:[map_size[0],map_size[1],1]
+        background = tf.expand_dims(tf.zeros([map_size[0], map_size[1]]), -1)
+        #[map_size[0],map_size[1],NUM_OF_HEAMAPS]
+        gt_heatmap_all_jt = tf.concat([gt_heatmap_all_jt, background], -1)
+        return gt_heatmap_all_jt
 
 
 def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
@@ -52,7 +56,7 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
     '''
     with tf.name_scope('gaussian_map'):
         sigma = tf.cast(sigma, tf.float32)
-        assert len(map_size) == 2,'Gaussian map size must be 2.'
+        assert len(map_size) == 2, 'Gaussian map size must be 2.'
         keypoint_coordinates = tf.cast(keypoint_coordinates, tf.int32)
         if valid_vec is not None:
             valid_vec = tf.cast(valid_vec, tf.float32)
@@ -78,28 +82,29 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
         keypoint_coordinates = tf.cast(keypoint_coordinates, tf.float32)
         keypoint_number = keypoint_coordinates.get_shape().as_list()[0]
         Y = tf.reshape(
-            tf.tile(tf.range(map_size[1]), [map_size[0]]), [map_size[1], map_size[0]])
+            tf.tile(tf.range(map_size[1]), [map_size[0]]),
+            [map_size[1], map_size[0]])
         X = tf.transpose(Y)
         #[256,256,21]
         X = tf.tile(tf.expand_dims(X, -1), [1, 1, keypoint_number])
         Y = tf.tile(tf.expand_dims(Y, -1), [1, 1, keypoint_number])
         #[256,256,21]
-        X_relative = tf.cast(X,tf.float32) - keypoint_coordinates[:, 1]
-        Y_relative = tf.cast(Y,tf.float32) - keypoint_coordinates[:, 0]
+        X_relative = tf.cast(X, tf.float32) - keypoint_coordinates[:, 1]
+        Y_relative = tf.cast(Y, tf.float32) - keypoint_coordinates[:, 0]
         #每个gaussian_map上仅坐标等于关节点坐标的位置distance为0，强度最大，其他位置按照正态分布递减
         distance = tf.square(X_relative) + tf.square(Y_relative)
-        gaussian_map=tf.exp(-distance/sigma)*tf.cast(cond,tf.float32)
+        gaussian_map = tf.exp(-distance / sigma) * tf.cast(cond, tf.float32)
         #背景 [256,256,1]
         #background_gaussian_map=tf.expand_dims(tf.zeros([map_size[0],map_size[1]]),-1)
-        background_gaussian_map=tf.expand_dims(tf.ones([map_size[0],map_size[1]]),-1)
-	#[size,size,1]
-        total=tf.reduce_sum(gaussian_map,-1,keep_dims=True)      
-        background_gaussian_map-=total
+        background_gaussian_map = tf.expand_dims(
+            tf.ones([map_size[0], map_size[1]]), -1)
+        #[size,size,1]
+        total = tf.reduce_sum(gaussian_map, -1, keep_dims=True)
+        background_gaussian_map -= total
         #[256,256,22]
-        gaussian_map=tf.concat([gaussian_map,background_gaussian_map],-1)
+        gaussian_map = tf.concat([gaussian_map, background_gaussian_map], -1)
 
         return gaussian_map
-
 
 
 #根据位置裁剪手部并resize之
@@ -108,17 +113,17 @@ def crop_image_from_xy(image, crop_location, crop_size, scale=1.0):
     Crops an image. When factor is not given does an central crop.
 
     Inputs:
-        image: 4D tensor, [batch, height, width, channels] which will be cropped in height and width dimension
-        crop_location: tensor, [batch, 2] which represent the height and width location of the crop
+        image: 4D tensor, [all_jt, height, width, channels] which will be cropped in height and width dimension
+        crop_location: tensor, [all_jt, 2] which represent the height and width location of the crop
         crop_size: int, describes the extension of the crop
     Outputs:
-        image_crop: 4D tensor, [batch, crop_size, crop_size, channels]
+        image_crop: 4D tensor, [all_jt, crop_size, crop_size, channels]
     """
     with tf.name_scope('crop_image_from_xy'):
         s = image.get_shape().as_list()
         assert len(
             s
-        ) == 4, "Image needs to be of shape [batch, width, height, channel]"
+        ) == 4, "Image needs to be of shape [all_jt, width, height, channel]"
         #scale=crop_size/crop_size_best
         scale = tf.reshape(scale, [-1])
         crop_location = tf.cast(crop_location, tf.float32)
@@ -143,7 +148,7 @@ def crop_image_from_xy(image, crop_location, crop_size, scale=1.0):
         x1 /= s[2]
         #在原图像width轴上占的比例
         x2 /= s[2]
-        #[1,4] 可以有[batch_size,4]个boxes分别用来对应batch_size张图片
+        #[1,4] 可以有[all_jt_size,4]个boxes分别用来对应all_jt_size张图片
         boxes = tf.stack([y1, x1, y2, x2], -1)
         #[1,2]
         crop_size = tf.cast(tf.stack([crop_size, crop_size]), tf.int32)

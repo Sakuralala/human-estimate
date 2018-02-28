@@ -48,6 +48,7 @@ class HourglassModel():
                     batch_size=inter_output.get_shape().as_list()[0]
                     height=inter_output.get_shape().as_list()[1]
                     width=inter_output.get_shape().as_list()[2]
+                    #64x64->256x256
                     pred_heatmaps=tf.image.resize_bilinear(inter_output,[height*4,width*4],'predicted_heatmaps')
                     loss=tf.nn.l2_loss(pred_heatmaps-gt_heatmaps,'inter_loss'+(i+1))/batch_size
                     self.loss.append(loss)

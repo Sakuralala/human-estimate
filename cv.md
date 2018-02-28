@@ -107,10 +107,17 @@ tf.nn.batch_normalization
 4、转置卷积需要加bias和激活吗？github上的实现好像只加了bias。
 5、bilinear插值，插入的点的值由已存在的点和该点的距离决定，详见:http://cv-tricks.com/image-segmentation/transpose-convolution-in-tensorflow/
 
-2017.02.02
+2018.02.02
 1、二维guassian核函数中sigma似乎对loss影响非常大，sigma一大那么loss也变大，且越来越难下降。
 
-2017.02.27
+2018.02.27
 1、xshell从本机向服务器上传文件：rz 文件名；从服务器向本机下载文件：sz 文件名。
 2、二维gaussian kernel制作(tensorflow)：tf.contrib.distributions.MultivariateNormalFullCovariance类，需要的参数：各个维度的均值，协方差矩阵。得到一个概率密度分布，再使用prob方法得到对应具体值时的值。
     note:inv 代表矩阵求逆;det代表求矩阵的值。
+
+2018.02.28
+1、psp-network:
+    a.pyramid pooling,即多个池化尺度捕获不同子区域的信息，最后再concat，此方法优于直接全区域池化。
+    b.使用了中继监督，并赋予中间的loss一定的权重，有助于训练，但测试时不使用。
+    c.从实验结果来看，平均池化比最大池化好。
+    d.使用了数据增强。

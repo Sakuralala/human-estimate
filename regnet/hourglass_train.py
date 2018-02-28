@@ -32,7 +32,7 @@ global_step = tf.Variable(0, trainable=False, name="global_step")
 lr = tf.train.exponential_decay(
     initial_learning_rate, global_step, decay_steps=10000, decay_rate=0.5)
 #opt = tf.train.AdamOptimizer(lr, 0.9, 0.999)
-opt=tf.train.RMSPropOptimizer(lr)
+opt=tf.train.RMSPropOptimizer(lr,)
 #opt=tf.train.AdadeltaOptimizer(lr)
 train_op = opt.minimize(loss, global_step=global_step)
 

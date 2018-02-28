@@ -40,7 +40,7 @@ class HourglassModel():
                 inter_total=tf.add(res3,conv4)
             '''
             for i in range(self.stack_number):
-                with tf.variable_scope('hourglass'+(i+1)):
+                with tf.variable_scope('hourglass'+str(i+1)):
                     hourglass=self.hourglass(inter_total,self.stage)
                     conv2=conv_block(hourglass,1,1,self.output_features,'conv1')
                     inter_output=conv_block(conv2,1,1,self.number_classes,'inter_output',do_normalization=False,do_RELU=False)
@@ -59,22 +59,22 @@ class HourglassModel():
 
 
     def hourglass(self,input,stage):
-        with tf.variable_scope('stage'+stage):
-            input=residual_block(input,1,int(self.output_features/2),self.output_features)
-            up=residual_block(input,1,int(self.output_features/2),self.output_features)
-            down=max_pool(up,2,2)
+        with tf.variable_scope('stage'+str(stage)):
+            input=residual_block(input,1,int(self.output_features/2),self.output_features,name='res1')
+            up=residual_block(input,1,int(self.output_features/2),self.output_features,'res2')
+            down=max_pool(up,2,2,'maxpooling')
             #down=residual_block(down,1,int(self.output_features/2),self.output_features)
             stage-=1
             if stage>0:
-                ret=self.hourglass(stage,down)
+                ret=self.hourglass(down,stage)
             else:
-                ret=residual_block(down,1,int(self.output_features/2),self.output_features)
-                ret=residual_block(ret,1,int(self.output_features/2),self.output_features) 
-                ret=residual_block(ret,1,int(self.output_features/2),self.output_features) 
+                ret=residual_block(down,1,int(self.output_features/2),self.output_features,'res1')
+                ret=residual_block(ret,1,int(self.output_features/2),self.output_features,'res2') 
+                ret=residual_block(ret,1,int(self.output_features/2),self.output_features,'res3') 
             height=ret.get_shape().as_list()[1]
             wigth=ret.get_shape().as_list()[2]
             up2=tf.image.resize_bilinear(ret,[height*2,wigth*2])
             total=tf.add(up,up2)
-            total=residual_block(total,1,int(self.output_features/2),self.output_features)
+            total=residual_block(total,1,int(self.output_features/2),self.output_features,'res3')
             return total
 

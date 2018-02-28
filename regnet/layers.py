@@ -24,7 +24,7 @@ def residual_block(input,
             output = tf.add(conv3, conv4, 'output')
         else:
             output = tf.add(conv3, input, 'output')
-        return tf.nn.relu(output, 'activated output')
+        return tf.nn.relu(output, 'activated_output')
 
 
 # 简单封装的卷积层 padding模式为same
@@ -49,7 +49,7 @@ def conv_block(input,
         bias = tf.Variable(tf.zeros([kernel_number]), name='bias')
         output = tf.nn.bias_add(conv, bias, name='output')
         if do_normalization:
-            output = batch_normalization(output, 'batch_normalized_output')
+            output = batch_normalization(output, name='batch_normalized_output')
         if do_RELU:
             output = tf.nn.relu(output, name='activated_output')
         return output

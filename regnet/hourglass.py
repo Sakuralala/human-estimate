@@ -28,17 +28,7 @@ class HourglassModel():
             pool=max_pool(res1,2,2)
             res2=residual_block(pool,1,int(self.output_features/2),self.output_features,'res2')
             inter_total=residual_block(res2,1,int(self.output_features/2),self.output_features,'res3')
-            '''
-            with tf.variable_scope('hourglass1'):
-                #res4=residual_block(res3,1,int(self.output_features/2),self.output_features,'res4')
-                hourglass1=self.hourglass(res3,self.stage)
-                #res5=residual_block(res4,1,int(self.output_features/2),self.output_features,'res5')
-                conv2=conv_block(hourglass1,1,1,self.output_features,'conv1')
-                conv3=conv_block(conv2,1,1,256,'conv2',do_normalization=False,do_RELU=False)
-                inter_output=conv_block(conv2,1,1,self.number_classes,'inter_output',do_normalization=False,do_RELU=False)
-                conv4=conv_block(inter_output,1,1,self.output_features,'conv3')
-                inter_total=tf.add(res3,conv4)
-            '''
+
             for i in range(self.stack_number):
                 with tf.variable_scope('hourglass'+str(i+1)):
                     hourglass=self.hourglass(inter_total,self.stage)
@@ -49,8 +39,8 @@ class HourglassModel():
                     height=inter_output.get_shape().as_list()[1]
                     width=inter_output.get_shape().as_list()[2]
                     #64x64->256x256
-                    pred_heatmaps=tf.image.resize_bilinear(inter_output,[height*4,width*4],'predicted_heatmaps')
-                    loss=tf.nn.l2_loss(pred_heatmaps-gt_heatmaps,'inter_loss'+(i+1))/batch_size
+                    #pred_heatmaps=tf.image.resize_bilinear(inter_output,[height*4,width*4],'predicted_heatmaps')
+                    loss=tf.nn.l2_loss(inter_output-gt_heatmaps,'inter_loss'+str(i+1))/batch_size
                     self.loss.append(loss)
                     if i!=self.stack_number-1:
                         conv3=conv_block(conv2,1,1,256,'conv2',do_normalization=False,do_RELU=False)
@@ -68,9 +58,9 @@ class HourglassModel():
             if stage>0:
                 ret=self.hourglass(down,stage)
             else:
-                ret=residual_block(down,1,int(self.output_features/2),self.output_features,'res1')
-                ret=residual_block(ret,1,int(self.output_features/2),self.output_features,'res2') 
-                ret=residual_block(ret,1,int(self.output_features/2),self.output_features,'res3') 
+                ret=residual_block(down,1,int(self.output_features/2),self.output_features,'inest_res1')
+                ret=residual_block(ret,1,int(self.output_features/2),self.output_features,'inest_res2') 
+                ret=residual_block(ret,1,int(self.output_features/2),self.output_features,'inest_res3') 
             height=ret.get_shape().as_list()[1]
             wigth=ret.get_shape().as_list()[2]
             up2=tf.image.resize_bilinear(ret,[height*2,wigth*2])

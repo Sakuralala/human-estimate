@@ -127,3 +127,13 @@ tf.nn.batch_normalization
 4、多个人/手时的预测，已经存在遮掩情况下的预测？
 5、衡量准确度时使用的是图像2d的uv坐标还是xy坐标？(应该是uv坐标)
 
+2018.03.01
+#TODO
+1、mpii数据集的读取处理相关操作。
+    a.输入和标签：.mat文件中一部分数据的缺失问题(为空)
+2、多人时预测的heatmap如何区分各个人？(需要先使用目标检测框架如YOLO、mask RCNN等定位出每个人)
+
+
+2018.03.02
+1、读取.mat文件，scipy.io.loadmat(),mat文件版本更高的使用hdfs。
+2、numpy.void类型的tmp，要查看各个类型使用tmp.dtype(返回一个dtype对象);各个fields使用tmp.dtype.fields(返回mappingproxy对象);tmp.dtype.fields.keys()返回dict_keys对象，里面包含各个key，若要直接的key列表，使用list(tmp.dtype.fields.keys())。

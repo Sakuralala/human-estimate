@@ -387,7 +387,8 @@ class BinaryDbReader(object):
         if self.hand_crop:
             gaussian_map_size = (self.crop_size, self.crop_size)
         #Chaged: 2018.01.29
-        gaussian_map=make_gaussian_map(keypoint_hw21,gaussian_map_size,self.sigma,keypoint_vis21)
+        #gaussian_map=make_gaussian_map(keypoint_hw21,gaussian_map_size,self.sigma,keypoint_vis21)
+        gaussian_map=make_gt_heatmap(keypoint_hw21,(64,64),1.0,keypoint_vis21)
 
         if self.gaussian_map_dropout:
             gaussian_map = tf.nn.dropout(gaussian_map, self.gaussian_map_dropout_prob,

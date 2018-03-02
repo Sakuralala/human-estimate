@@ -10,10 +10,30 @@ sigma:标准差，因为是制作二维Gaussian Map,两个维度间的坐标值�
 '''
 
 
-def make_gt_heatmap(keypoint_coordinates, map_size, sigma):
+def make_gt_heatmap(keypoint_coordinates, map_size, sigma,valid_vec):
     with tf.name_scope('ground_truth_heatmap'):
         sigma = tf.cast(sigma, tf.float32)
         dims = keypoint_coordinates.get_shape().as_list()
+        if valid_vec is not None:
+            valid_vec = tf.cast(valid_vec, tf.float32)
+            valid_vec = tf.squeeze(valid_vec)
+            cond_val = tf.greater(valid_vec, 0.5)
+        else:
+            cond_val = tf.ones_like(
+                keypoint_coordinates[:, 0], dtype=tf.float32)
+            cond_val = tf.greater(cond_val, 0.5)
+        # 在map_size width范围内的坐标
+        cond_1_in = tf.logical_and(
+            tf.less(keypoint_coordinates[:, 0], map_size[1] - 1),
+            tf.greater(keypoint_coordinates[:, 0], 0))
+        # 在map_size height范围内的坐标
+        cond_2_in = tf.logical_and(
+            tf.less(keypoint_coordinates[:, 1], map_size[0] - 1),
+            tf.greater(keypoint_coordinates[:, 1], 0))
+        cond_in = tf.logical_and(cond_1_in, cond_2_in)
+        #即 可见又在crop_image范围内的坐标
+        cond = tf.logical_and(cond_val, cond_in)
+
         #[2,2]
         covariance = tf.eye(2, name='covariance') * sigma
         #[21,2,2]
@@ -35,11 +55,11 @@ def make_gt_heatmap(keypoint_coordinates, map_size, sigma):
         #[map_size[0]*map_size[1],all_jt,2]
         coor_all_jt = tf.tile(tf.expand_dims(coor, 1), [1, dims[0], 1])
         #gt_heamap:[map_size[0]*map_size[1],all_jt]
-        gt_heatmap_all_jt = pdf_mvn.prob(coor_all_jt)
+        gt_heatmap_all_jt = pdf_mvn.prob(tf.cast(coor_all_jt, tf.float32))
         #[map_size[0],map_size[1],all_jt]
         gt_heatmap_all_jt = tf.reshape(gt_heatmap_all_jt,
-                                      [map_size[0], map_size[1], dims[0]],
-                                      'ground_truth_heatmap_all_jt')
+                                       [map_size[0], map_size[1], dims[0]],
+                                       'ground_truth_heatmap_all_jt') * cond
         #背景:[map_size[0],map_size[1],1]
         background = tf.expand_dims(tf.zeros([map_size[0], map_size[1]]), -1)
         #[map_size[0],map_size[1],NUM_OF_HEAMAPS]

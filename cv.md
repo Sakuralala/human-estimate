@@ -137,3 +137,22 @@ tf.nn.batch_normalization
 2018.03.02
 1、读取.mat文件，scipy.io.loadmat(),mat文件版本更高的使用hdfs。
 2、numpy.void类型的tmp，要查看各个类型使用tmp.dtype(返回一个dtype对象);各个fields使用tmp.dtype.fields(返回mappingproxy对象);tmp.dtype.fields.keys()返回dict_keys对象，里面包含各个key，若要直接的key列表，使用list(tmp.dtype.fields.keys())。
+
+2018.03.03
+1、测试时图片的尺寸处理？图片先被crop到256x256，需要先提供人的中心位置的信息？然后再进行预测。
+2、坐标的转换问题。
+3、from tensorflow.python.tools.inspect_checkpoint import print_tensors_in_checkpoint_file
+    print_tensors_in_checkpoint_file("test-ckpt/model-2", None, True)
+    用以输出checkpoint中保存的东西
+    def print_tensors_in_checkpoint_file(file_name, tensor_name, all_tensors,
+                                     all_tensor_names):
+  """Prints tensors in a checkpoint file.
+  If no `tensor_name` is provided, prints the tensor names and shapes
+  in the checkpoint file.
+  If `tensor_name` is provided, prints the content of the tensor.
+  Args:
+    file_name: Name of the checkpoint file.
+    tensor_name: Name of the tensor in the checkpoint file to print.
+    all_tensors: Boolean indicating whether to print all tensors.
+    all_tensor_names: Boolean indicating whether to print all tensor names.
+4、tensorflow保存与恢复模型：http://cv-tricks.com/tensorflow-tutorial/save-restore-tensorflow-models-quick-complete-tutorial/

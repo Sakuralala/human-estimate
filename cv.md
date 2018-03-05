@@ -156,3 +156,6 @@ tf.nn.batch_normalization
     all_tensors: Boolean indicating whether to print all tensors.
     all_tensor_names: Boolean indicating whether to print all tensor names.
 4、tensorflow保存与恢复模型：http://cv-tricks.com/tensorflow-tutorial/save-restore-tensorflow-models-quick-complete-tutorial/
+
+2018.03.05
+1、tf.boolean_mask(tensor,mask)

@@ -32,7 +32,7 @@ def train(category):
         tf.train.start_queue_runners(sess=sess)
 
         #Model
-        model = HourglassModel(categories_dict[category])
+        model = HourglassModel(len(categories_dict[category]))
         model.build_model(batch[0], batch[1])
 
         loss = sum(model.loss)
@@ -94,7 +94,7 @@ def train(category):
 def main():
     parser = argparse.ArgumentParser()
     #后面必须跟一个服装类别的参数
-    parser.add_argument('category', type=str, choices=categories_dict.keys())
+    parser.add_argument('category', type=str, choices=categories)
     #返回Namespace对象
     args = parser.parse_args()
     print(args.category)

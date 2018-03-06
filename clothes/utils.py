@@ -5,9 +5,9 @@ from params_clothes import *
 
 #使用tf的内建类来进行二维Gaussian Map的制作
 '''
-keypoint_coordinates:关节点的坐标，[21,2]先height再width
+keypoint_coordinates:关节点的坐标，note:是在原图的尺寸下的坐标。[21,2]先height再width tf.int32
 map_size:Gaussian Map的大小，[h,w]
-sigma:标准差，因为是制作二维Gaussian Map,两个维度间的坐标值相互独立(TODO:其实应该是有联系的),故协方差为0，相同维度间的方差取相同。
+sigma:标准差，因为是制作二维Gaussian Map,两个维度间的坐标值相互独立,故协方差为0，相同维度间的方差取相同。
 '''
 
 
@@ -37,7 +37,7 @@ def make_gt_heatmap(keypoint_coordinates, map_size, sigma, valid_vec):
 
         #[2,2]
         covariance = tf.eye(2, name='covariance') * sigma
-        #[21,2,2]
+        #[k,2,2]
         covariance_all_jt = tf.tile(
             tf.expand_dims(covariance, 0), [dims[0], 1, 1],
             name='covariance_all_jt')
@@ -58,13 +58,16 @@ def make_gt_heatmap(keypoint_coordinates, map_size, sigma, valid_vec):
         #gt_heamap:[map_size[0]*map_size[1],all_jt]
         gt_heatmap_all_jt = pdf_mvn.prob(tf.cast(coor_all_jt, tf.float32))
         #[map_size[0],map_size[1],all_jt]
-        gt_heatmap_all_jt = tf.reshape(gt_heatmap_all_jt,
-                                       [map_size[0], map_size[1], dims[0]],
-                                       'ground_truth_heatmap_all_jt') * cond
+        gt_heatmap_all_jt = tf.reshape(
+            gt_heatmap_all_jt, [map_size[0], map_size[1], dims[0]],
+            'ground_truth_heatmap_all_jt') * tf.cast(cond, tf.float32)
         #背景:[map_size[0],map_size[1],1]
         background = tf.expand_dims(tf.zeros([map_size[0], map_size[1]]), -1)
         #[map_size[0],map_size[1],NUM_OF_HEAMAPS]
         gt_heatmap_all_jt = tf.concat([gt_heatmap_all_jt, background], -1)
+        gt_heatmap_all_jt = tf.image.resize_bilinear(
+            tf.expand_dims(gt_heatmap_all_jt, 0),
+            [map_size[0] // 4, map_size[1] // 4])
         return gt_heatmap_all_jt
 
 
@@ -141,7 +144,7 @@ def boundary_calculate(label):
     #[k*2]
     kpt_coor_visible = tf.stack([kpt_y_visible, kpt_x_visible], -1)
     #[2]
-    min_coor = tf.maximum(tf.reduce_min(kpt_coor_visible, 0), 0.0)
+    min_coor = tf.maximum(tf.reduce_min(kpt_coor_visible, 0), 0)
     max_coor = tf.minimum(
         tf.reduce_max(kpt_coor_visible, 0),
         [input_para['height'], input_para['width']])
@@ -173,22 +176,25 @@ def image_crop_resize(image, crop_location, crop_size):
 
         crop_size_best = tf.maximum(crop_location[1, 0] - crop_location[0, 0],
                                     crop_location[1, 1] - crop_location[0, 1])
-        center = tf.cast([(crop_location[1, 0] - crop_location[0, 0]) / 2,
-                          (crop_location[1, 1] - crop_location[0, 1]) / 2],
-                         tf.float32)
+        #[2,1]
+        center = tf.cast(
+            tf.expand_dims([(crop_location[1, 0] - crop_location[0, 0]) / 2,
+                            (crop_location[1, 1] - crop_location[0, 1]) / 2],
+                           -1), tf.float32)
+        #note 此处切片之后 y/x变为了1维的
         y_min = tf.maximum(center[0] - crop_size_best // 2, 0.0)
         y_max = tf.minimum(y_min + crop_size_best, input_para['height'])
         x_min = tf.maximum(center[1] - crop_size_best // 2, 0.0)
         x_max = tf.minimum(x_min + crop_size_best, input_para['width'])
         boxes = tf.stack([
             y_min / (input_para['height'] - 1), x_min /
-            (input_para['width'] - 1), y_max / (input_para['height'] - 1),
-            x_max / (input_para['width'] - 1)
-        ])
+            (input_para['width'] - 1), y_max /
+            (input_para['height'] - 1), x_max / (input_para['width'] - 1)
+        ], -1)
         box_ind = tf.range(s[0])
         #先从原图像中提取box指定的crop_image再进行resize到crop_size
         image_cropped_and_resized = tf.image.crop_and_resize(
             image, boxes, box_ind, tf.cast([crop_size, crop_size], tf.int32))
-        image_cropped_and_resized=tf.squeeze(image_cropped_and_resized)
+        image_cropped_and_resized = tf.squeeze(image_cropped_and_resized)
         #[resized_height,resized_width,channels]
         return image_cropped_and_resized

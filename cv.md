@@ -159,3 +159,21 @@ tf.nn.batch_normalization
 
 2018.03.05
 1、tf.boolean_mask(tensor,mask)
+2、切片操作会造成降维，切记！！！！！！！！
+
+2018.03.06
+1、tf.Data API,新的生成batch的API。
+    a.两个抽象：tf.data.Dataset、tf.data.Iterator。
+    b.针对tfrecords的通用步骤：(有些未加参数)
+        dataset=tf.data.TFRecordDataset(tf_file)
+        dataset=dataset.map()
+        dataset=dataset.shuffle()
+        dataset=dataset.batch(self.batch_size)
+        dataset=dataset.repeat()
+        #以下为迭代器迭代着取数据
+        iterator=dataset.make_one_shot_iterator()
+        batched_images,batched_labels=iterator.get_next()
+
+2、读取tfrecord时若各张image、各张label的维度不一定一致该如何处理？
+    报错时都是由于reshape的shape参数不对，读取时记得shape这个tensor要么所有值已知，要么所有值未知，不能混！！
+    （如[features['h'],features['w'],3]这样会报错）

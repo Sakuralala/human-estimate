@@ -1,10 +1,13 @@
 import tensorflow as tf
 import numpy as np
+import scipy
 import csv
 import os
 from PIL import Image
 from params_clothes import *
 from utils import make_gt_heatmap, image_crop_resize, boundary_calculate
+import sys
+import cv2
 
 
 def _int64_feature(val):
@@ -22,6 +25,7 @@ def _float_feature(val):
 #TODO:改为类
 class clothes_batch_generater():
     def __init__(self,
+                 category,
                  batch_size=8,
                  sigma=1.0,
                  crop_size=256,
@@ -37,20 +41,26 @@ class clothes_batch_generater():
         self.crop_and_resize = crop_and_resize
         self.sigma = sigma
         self.crop_size = crop_size
+        self.category = category
 
-    def _coor_read(self, coor):
+    def _coor_read(self, cat, coor):
         '''
         description:用以将标签中的字符串三元组坐标转换为np.ndarray并返回之
         args:
+            cat:类别
             coor:读取csv文件中的关节点部分
         '''
         ret = []
-        for xyv in coor:
-            #忽略没有的关节点
+        for i, xyv in enumerate(coor):
+            #忽略对应类别没有的关节点
             if xyv[0] == '-':
-                continue
-            xyv = np.asarray([int(i) for i in xyv.split('_')], np.int)
-            ret.append(xyv)
+                if all_kpt_list[i] in categories_dict[cat]:
+                    #对于相同类别下可能不存在的关节点直接置全零
+                    #xyv=np.asarray([0,0,0],np.int)
+                    ret.append(np.asarray([0, 0, 0], np.int))
+            else:
+                xyv = np.asarray([int(i) for i in xyv.split('_')], np.int)
+                ret.append(xyv)
         #kx3
         return np.asarray(ret, np.int)
 
@@ -65,10 +75,11 @@ class clothes_batch_generater():
             path:训练的目录
             category:服饰的类别，为了节省内存，还是一个个来把。。。
         '''
-        csv_file = csv.reader(open(path + '/Annotations/train.csv', 'r'))
+        csv_file = csv.reader(open(path + '\\Annotations\\train.csv', 'r'))
 
         images = []
         labels = []
+        header = None
         for i, row in enumerate(csv_file):
             #先把表头读出来
             if i == 0:
@@ -76,10 +87,16 @@ class clothes_batch_generater():
             else:
                 if category != row[1]:
                     continue
-                img_name = path + '/' + row[0]
+                img_name = path + '\\' + row[0]
                 #k*3
-                coor = self._coor_read(row[2:])
-                images.append(np.asarray(Image.open(img_name), np.float32))
+                coor = self._coor_read(category, row[2:])
+                img = np.asarray(Image.open(img_name), np.float32)
+                #resize到统一大小
+                #if img.shape[0] != input_para['height'] or img.shape[1] != input_para['width']:
+                #    img = cv2.resize(
+                #        img, (input_para['height'], input_para['width']))
+                #resize改为到读取tfrec时再做避免坐标转换两次
+                images.append(img)
                 #size*k*3
                 labels.append(coor)
         return images, labels
@@ -93,7 +110,7 @@ class clothes_batch_generater():
         args:
             path:训练的目录
         '''
-        csv_file = csv.reader(open(path + '/Annotations/train.csv', 'r'))
+        csv_file = csv.reader(open(path + '\\Annotations\\train.csv', 'r'))
         #下次不要这样写了。。。dict的hash以及多个list到后面太占内存了。。。。64gb都差点被爆了
         clothes_labels = {
             'blouse': [],
@@ -136,28 +153,37 @@ class clothes_batch_generater():
             file_path:生成的文件存放的路径
         '''
         print("Start coverting to tfrecord.")
+        sys.stdout.flush()
         if category == None:
             raise ValueError("Please give an correct category.")
         images, labels = self._data_generate_single(category, data_path)
-        file_name = tf_path + '/' + category + '.tfrec'
+        file_name = tf_path + '\\' + category + '.tfrec'
         num = len(images)
+        print(num)
+        sys.stdout.flush()
         with tf.python_io.TFRecordWriter(file_name) as writer:
             #序列化并填充至example  然后写入磁盘
             #方向
             #labels.shape 返回元祖  在len以取得维数
             for i in range(num):
+                #if image[i]
                 image_raw = images[i].tostring()
+                #[512,512,3]
+                #print(images[i].shape)
                 label_raw = labels[i].tostring()
                 example = tf.train.Example(
                     features=tf.train.Features(
                         feature={
-                            #'height': _int64_feature(height),
-                            #'width': _int64_feature(width),
+                            'height': _int64_feature(images[i].shape[0]),
+                            'width': _int64_feature(images[i].shape[1]),
+                            'channels': _int64_feature(images[i].shape[2]),
                             'label_raw': _bytes_feature(label_raw),
                             'image_raw': _bytes_feature(image_raw)
                         }))
                 writer.write(example.SerializeToString())
         print("Covert %s done." % category)
+        sys.stdout.flush()
+        images, labels = [], []
 
     def convert_to_tfrecords(
             self,
@@ -172,6 +198,7 @@ class clothes_batch_generater():
             file_path:生成的文件存放的路径
         '''
         print("Start coverting to tfrecord.")
+        sys.stdout.flush()
         for key in labels_dict.keys():
             images = images_dict[key]
             labels = labels_dict[key]
@@ -186,6 +213,12 @@ class clothes_batch_generater():
                 for i in range(num):
                     image_raw = images[i].tostring()
                     label_raw = labels[i].tostring()
+                    if labels[i].shape[0] != 13 or labels[i].shape[1] != 3:
+                        print(i)
+                        sys.stdout.flush()
+                    if images[i].shape[0] != 512 or images[i].shape[1] != 512:
+                        print(i)
+                        sys.stdout.flush()
                     example = tf.train.Example(
                         features=tf.train.Features(
                             feature={
@@ -196,7 +229,9 @@ class clothes_batch_generater():
                             }))
                     writer.write(example.SerializeToString())
             print("Covert %s done." % file_name)
+            sys.stdout.flush()
         print("Covert all done.")
+        sys.stdout.flush()
 
     def _read_from_tfrecords(self, file_queue):
         reader = tf.TFRecordReader()
@@ -210,12 +245,16 @@ class clothes_batch_generater():
             })
 
         image = tf.decode_raw(feature['image_raw'], tf.float32)
+        #/255.0-0.5是为了算均值
         reshaped_image = tf.reshape(image, [
             input_para['height'], input_para['width'], input_para['channels']
-        ])
+        ]) / 255.0 - 0.5
         #k*3
         label = tf.decode_raw(feature['label_raw'], tf.float32)
-        reshaped_label = tf.reshape(label, [-1, 3])
+        #不能是不确定的值
+        #reshaped_label = tf.reshape(label, [-1, 3])
+        reshaped_label = tf.reshape(label,
+                                    [len(categories_dict[self.category]), 3])
         #关键点数量
         #kpt_num=reshaped_label.get_shape().as_list()[0]
         is_visible = tf.cast(reshaped_label[:, -1], tf.bool)
@@ -230,16 +269,18 @@ class clothes_batch_generater():
                                        self.crop_size), self.sigma, is_visible)
         #TODO:加上数据增强(data augement)
         if self.crop_and_resize:
+            min_coor, max_coor = boundary_calculate(reshaped_label)
             cropped_image = image_crop_resize(
-                tf.expand_dims(reshaped_image, 0),
-                [boundary_calculate(reshaped_label)], self.crop_size)
-            return cropped_image,gt_heatmaps
+                tf.expand_dims(reshaped_image, 0), [min_coor, max_coor],
+                self.crop_size)
+            return cropped_image, gt_heatmaps
 
         return reshaped_image, gt_heatmaps
 
     def batch_generate(self, tf_file):
         if not os.path.exists(tf_file):
             raise ValueError("Please give an correct path.")
+
     #生成输入文件队列   注意参数应该是string tensor  所以加个[]
         if train_para['is_train']:
             file_queue = tf.train.string_input_producer([tf_file])
@@ -265,12 +306,101 @@ class clothes_batch_generater():
 
         return images_batch, labels_batch
 
-    #生成二进制文件测试
+    def _parse_function(self, example_proto):
+        features = {
+            "image_raw": tf.FixedLenFeature((), tf.string),
+            "label_raw": tf.FixedLenFeature((), tf.string),
+            "height": tf.FixedLenFeature((), tf.int64),
+            "width": tf.FixedLenFeature((), tf.int64),
+            'channels': tf.FixedLenFeature((), tf.int64)
+        }
+        parsed_features = tf.parse_single_example(example_proto, features)
+        image = tf.decode_raw(parsed_features['image_raw'], tf.float32)
+        height = tf.cast(parsed_features['height'], tf.int32)
+        width = tf.cast(parsed_features['width'], tf.int32)
+        channels = tf.cast(parsed_features['channels'], tf.int32)
+        shape = tf.stack([height, width, channels])
+        #/255.0-0.5是为了算均值
+        reshaped_image = tf.reshape(image, shape) / 255.0 - 0.5
+        #print(reshaped_image.shape)
+        #k*3
+        #注意是int32
+        label = tf.decode_raw(parsed_features['label_raw'], tf.int32)
+        #print(label.shape)
+        #sys.stdout.flush()
+        reshaped_label = tf.reshape(label,
+                                    [len(categories_dict[self.category]), 3])
+        #return reshaped_image, reshaped_label
+        #关键点数量
+        is_visible = tf.cast(reshaped_label[:, -1], tf.bool)
+        #[k,2]
+        coor_yx = tf.cast(
+            tf.stack([reshaped_label[:, 1], reshaped_label[:, 0]], -1),
+            tf.float32)
+        #coor_yx=tf.stack([reshaped_label[:,1],reshaped_label[:,0]],-1)
+        gt_heatmaps = make_gt_heatmap(coor_yx, (input_para['height'],
+                                                input_para['width'])
+                                      if self.crop_and_resize == False else
+                                      (self.crop_size,
+                                       self.crop_size), self.sigma, is_visible)
+        #TODO:加上数据增强(data augement)
+        if self.crop_and_resize:
+            min_coor, max_coor = boundary_calculate(reshaped_label)
+            cropped_image = image_crop_resize(
+                tf.expand_dims(reshaped_image, 0), [min_coor, max_coor],
+                self.crop_size)
+            return cropped_image, gt_heatmaps
+
+        return reshaped_image, gt_heatmaps
+
+    #使用新的tf.Data API来生成batch
+    def dataset_input_new(self, tf_file):
+        dataset = tf.data.TFRecordDataset(tf_file)
+        dataset = dataset.map(self._parse_function)
+        dataset = dataset.shuffle(3000)
+        dataset = dataset.batch(self.batch_size)
+        dataset = dataset.repeat()
+        #迭代生成批次数据
+        iterator = dataset.make_one_shot_iterator()
+        batched_images, batched_labels = iterator.get_next()
+        #生成的batch中各个的维度必须相同
+        return batched_images, batched_labels
+
+
+#生成二进制文件测试
+'''
+categories = ['blouse', 'skirt', 'outwear', 'trousers', 'dress']
+for cat in categories:
+    tmp = clothes_batch_generater(cat)
+    tmp.convert_to_tfrecords_single(
+        cat,
+        'C:\\Users\\oldhen\\Downloads\\tianchi\\fashionAI_key_points_train_20180227\\train'
+    )
+    #for gc
+    tmp = None
+'''
+
+#从tfrecords中读取测试
+with tf.Session() as sess:
+    #print(len(categories_dict['blouse']))
+    gen = clothes_batch_generater('blouse', 2)
+    if not os.path.exists(dir_para['tf_dir']):
+        os.mkdir(dir_para['tf_dir'])
+        print('Created tfrecords dir:', dir_para['tf_dir'])
+        sys.stdout.flush()
+    rec_name = 'blouse.tfrec'
+    for (root, dirs, files) in os.walk(dir_para['tf_dir']):
+        if rec_name not in files:
+            gen.convert_to_tfrecords_single(
+                'blouse', dir_para['train_data_dir'], dir_para['tf_dir'])
+    batch = gen.dataset_input_new(dir_para['tf_dir'] + '\\' + rec_name)
+    sess.run(tf.global_variables_initializer())
+    img, lb = sess.run(batch)
     '''
-    categories = ['blouse', 'skirt', 'outwear', 'trousers', 'dress']
-    for cat in categories:
-        result = _data_generate_single(cat)
-        convert_to_tfrecords_single(result[0], result[1], cat)
-        #for gc
-        result = []
+    print(img)
+    scipy.misc.imsave('test1.png', img[0])
+    scipy.misc.imsave('test2.png', img[1])
+    print(lb)
     '''
+    #scipy.misc.imsave('hp1.png', lb[0])
+    #scipy.misc.imsave('hp2.png', lb[1])

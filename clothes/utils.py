@@ -43,7 +43,7 @@ def make_gt_heatmap(keypoint_coordinates, map_size, sigma, valid_vec):
             name='covariance_all_jt')
         #keypoint_coordinates即为中心位置，即均值点
         pdf_mvn = tfd.MultivariateNormalFullCovariance(
-            keypoint_coordinates, covariance, name='2dim-normal-distribution')
+            tf.cast(keypoint_coordinates,tf.float32), covariance, name='2dim-normal-distribution')
         #以下几步生成了一个[256,256,2]的三维坐标枚举，即从[0,0]到[255,255]
         h = tf.range(map_size[0])
         w = tf.range(map_size[1])
@@ -68,6 +68,7 @@ def make_gt_heatmap(keypoint_coordinates, map_size, sigma, valid_vec):
         gt_heatmap_all_jt = tf.image.resize_bilinear(
             tf.expand_dims(gt_heatmap_all_jt, 0),
             [map_size[0] // 4, map_size[1] // 4])
+        gt_heatmap_all_jt=tf.squeeze(gt_heatmap_all_jt)
         return gt_heatmap_all_jt
 
 
@@ -131,25 +132,37 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
         return gaussian_map
 
 
-def boundary_calculate(label):
+def boundary_calculate(label,height,width):
     '''
-    description:根据图像和对应坐标计算该图像的边界，返回左上角和右下角坐标
+    description:根据图像和对应坐标计算该图像的边界，返回左上角和右下角坐标(y,x)
     args:
         label:标签
+        height:图像高
+        width:图像宽
     '''
-    kpt_y_visible = tf.boolean_mask(label[:, 1], tf.cast(label[:, 2], tf.bool),
-                                    'keypoint_y_visible')
-    kpt_x_visible = tf.boolean_mask(label[:, 0], tf.cast(label[:, 2], tf.bool),
-                                    'keypoint_x_visible')
-    #[k*2]
-    kpt_coor_visible = tf.stack([kpt_y_visible, kpt_x_visible], -1)
-    #[2]
-    min_coor = tf.maximum(tf.reduce_min(kpt_coor_visible, 0), 0)
-    max_coor = tf.minimum(
-        tf.reduce_max(kpt_coor_visible, 0),
-        [input_para['height'], input_para['width']])
+    #可见的点 先x后y
+    kpt_visible=tf.boolean_mask(label[:,:2],tf.cast(label[:,2],tf.bool))
+    min_coor=tf.maximum(tf.reduce_min(kpt_visible,0),0)
+    max_coor=tf.minimum(tf.reduce_max(kpt_visible,0),[width,height])
+    #[y,x]
+    return min_coor[::-1], max_coor[::-1]
 
-    return min_coor, max_coor
+def kpt_coor_translate(coor,scale,old_center,new_center):
+    '''
+    des:计算并返回resize后的各个关键点的新坐标(tf.int32)
+    args:
+        coor:原坐标
+        scale:[2]，分别表示在height上的放缩比例和在width上的放缩比例
+        old_center:原图的中心
+        new_center:新图的中心
+    '''
+    #和后面scale乘时需要变为float
+    coor_relative=tf.cast(coor-old_center,tf.float32)
+    #tf.Print(coor_relative,[coor_relative],'coor_rel:')
+    new_coor_relative=tf.cast(coor_relative*scale,tf.int32)
+    new_coor=new_coor_relative+new_center
+
+    return new_coor
 
 
 #根据位置裁剪手部并resize之
@@ -171,7 +184,6 @@ def image_crop_resize(image, crop_location, crop_size):
         ) == 4, "Image needs to be of shape [all_jt, width, height, channel]"
         #scale=crop_size/crop_size_best
         crop_location = tf.cast(crop_location, tf.float32)
-        #crop_location = tf.reshape(crop_location, [s[0], 2])
         crop_size = tf.cast(crop_size, tf.float32)
 
         crop_size_best = tf.maximum(crop_location[1, 0] - crop_location[0, 0],

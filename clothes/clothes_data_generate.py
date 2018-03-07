@@ -5,7 +5,7 @@ import csv
 import os
 from PIL import Image
 from params_clothes import *
-from utils import make_gt_heatmap, image_crop_resize, boundary_calculate
+from utils import *
 import sys
 import cv2
 
@@ -28,19 +28,19 @@ class clothes_batch_generater():
                  category,
                  batch_size=8,
                  sigma=1.0,
-                 crop_size=256,
+                 cropped_resized_size=256,
                  crop_and_resize=True):
         '''
         args:
             batch_size:批大小
             crop_and_resize:是否根据目标坐标裁剪
-            crop_size:裁剪后的图像大小
+            cropped_resized_size:裁剪后的图像大小
             sigma:二维高斯核的方差
         '''
         self.batch_size = batch_size
         self.crop_and_resize = crop_and_resize
         self.sigma = sigma
-        self.crop_size = crop_size
+        self.cropped_resized_size = cropped_resized_size
         self.category = category
 
     def _coor_read(self, cat, coor):
@@ -90,7 +90,7 @@ class clothes_batch_generater():
                 img_name = path + '\\' + row[0]
                 #k*3
                 coor = self._coor_read(category, row[2:])
-                img = np.asarray(Image.open(img_name), np.float32)
+                img = np.asarray(Image.open(img_name))
                 #resize到统一大小
                 #if img.shape[0] != input_para['height'] or img.shape[1] != input_para['width']:
                 #    img = cv2.resize(
@@ -262,17 +262,17 @@ class clothes_batch_generater():
         coor_yx = tf.cast(
             tf.stack([reshaped_label[:, 1], reshaped_label[:, 0]], -1),
             tf.float32)
-        gt_heatmaps = make_gt_heatmap(coor_yx, (input_para['height'],
-                                                input_para['width'])
-                                      if self.crop_and_resize == False else
-                                      (self.crop_size,
-                                       self.crop_size), self.sigma, is_visible)
+        gt_heatmaps = make_gt_heatmap(
+            coor_yx, (input_para['height'], input_para['width'])
+            if self.crop_and_resize == False else (self.cropped_resized_size,
+                                                   self.cropped_resized_size),
+            self.sigma, is_visible)
         #TODO:加上数据增强(data augement)
         if self.crop_and_resize:
             min_coor, max_coor = boundary_calculate(reshaped_label)
             cropped_image = image_crop_resize(
                 tf.expand_dims(reshaped_image, 0), [min_coor, max_coor],
-                self.crop_size)
+                self.cropped_resized_size)
             return cropped_image, gt_heatmaps
 
         return reshaped_image, gt_heatmaps
@@ -315,56 +315,98 @@ class clothes_batch_generater():
             'channels': tf.FixedLenFeature((), tf.int64)
         }
         parsed_features = tf.parse_single_example(example_proto, features)
-        image = tf.decode_raw(parsed_features['image_raw'], tf.float32)
+        image = tf.decode_raw(parsed_features['image_raw'], tf.uint8)
         height = tf.cast(parsed_features['height'], tf.int32)
         width = tf.cast(parsed_features['width'], tf.int32)
         channels = tf.cast(parsed_features['channels'], tf.int32)
         shape = tf.stack([height, width, channels])
-        #/255.0-0.5是为了算均值
-        reshaped_image = tf.reshape(image, shape) / 255.0 - 0.5
-        #print(reshaped_image.shape)
+        #normalize [-.5,.5]
+        reshaped_image = tf.reshape(tf.cast(image, tf.float32),
+                                    shape) / 255.0 - 0.5
         #k*3
         #注意是int32
         label = tf.decode_raw(parsed_features['label_raw'], tf.int32)
-        #print(label.shape)
-        #sys.stdout.flush()
         reshaped_label = tf.reshape(label,
                                     [len(categories_dict[self.category]), 3])
         #return reshaped_image, reshaped_label
         #关键点数量
         is_visible = tf.cast(reshaped_label[:, -1], tf.bool)
-        #[k,2]
-        coor_yx = tf.cast(
-            tf.stack([reshaped_label[:, 1], reshaped_label[:, 0]], -1),
-            tf.float32)
-        #coor_yx=tf.stack([reshaped_label[:,1],reshaped_label[:,0]],-1)
-        gt_heatmaps = make_gt_heatmap(coor_yx, (input_para['height'],
-                                                input_para['width'])
-                                      if self.crop_and_resize == False else
-                                      (self.crop_size,
-                                       self.crop_size), self.sigma, is_visible)
+        #[k,2] 在原尺寸图像上的坐标
+        coor_yx = tf.stack([reshaped_label[:, 1], reshaped_label[:, 0]], -1)
         #TODO:加上数据增强(data augement)
+        #要crop的话
         if self.crop_and_resize:
-            min_coor, max_coor = boundary_calculate(reshaped_label)
-            cropped_image = image_crop_resize(
-                tf.expand_dims(reshaped_image, 0), [min_coor, max_coor],
-                self.crop_size)
-            return cropped_image, gt_heatmaps
+            min_coor, max_coor = boundary_calculate(reshaped_label, height,
+                                                    width)
+            sub = max_coor - min_coor
+            #tf.Print(sub,[sub],'sub:')
+            #不crop成正方形直接resize试一下
+            #cropped_resized_size_square=tf.maximum(sub[0],sub[1])
+            #old_center = (max_coor+min_coor)//2 
+            old_center=min_coor+sub//2
 
-        return reshaped_image, gt_heatmaps
+
+            #到此处应该没有错误
+            #scale必须是浮点数
+            cropped_resized_size = tf.stack(
+                [self.cropped_resized_size, self.cropped_resized_size])
+            scale=tf.cast(cropped_resized_size,tf.float32)/tf.cast(sub,tf.float32)
+            #tf.Print(scale,[scale],'scale:')
+            #经过resize后新的关键点坐标
+            coor_yx = kpt_coor_translate(coor_yx, scale, old_center,
+                                         cropped_resized_size // 2)
+            #coor_yx=tf.cast(tf.cast(coor_yx,tf.float32)*scale,tf.int32)
+            min_coor = tf.cast(min_coor, tf.float32)
+            max_coor = tf.cast(max_coor, tf.float32)
+            height=tf.cast(height,tf.float32)
+            width=tf.cast(width,tf.float32)
+            #在原图上所占的比例
+            boxes = tf.stack([
+                min_coor[0] / height, min_coor[1] / width,
+                max_coor[0] / height, max_coor[1] / width
+            ])
+            boxes_ind = tf.range(1)
+            #crop并且resize到指定大小
+            cropped_resized_image = tf.image.crop_and_resize(
+                tf.expand_dims(reshaped_image,0), tf.expand_dims(boxes,0), boxes_ind, cropped_resized_size)
+            cropped_resized_image = tf.squeeze(cropped_resized_image)
+            gt_heatmaps = make_gt_heatmap(
+                coor_yx,
+                (self.cropped_resized_size, self.cropped_resized_size),
+                self.sigma, is_visible)
+            coor=tf.concat([coor_yx,tf.cast(tf.expand_dims(is_visible,-1),tf.int32)],-1)
+
+            return cropped_resized_image, gt_heatmaps,coor
+        else:  #不crop，直接resize(保证batch中各个的维度一致)
+            resized_image = tf.image.resize_bilinear(
+                tf.expand_dims(reshaped_image, 0),
+                [input_para['height'], input_para['width']])
+            old_center = tf.stack([height / 2, width / 2])
+            new_center = tf.stack(
+                [input_para['height'] / 2, input_para['width'] / 2])
+            scale = tf.stack([
+                tf.cast(height, tf.float32) / input_para['height'],
+                tf.cast(width, tf.float32) / input_para['width']
+            ])
+            coor_yx = kpt_coor_translate(coor_yx, scale, old_center,
+                                         new_center)
+            gt_heatmaps = make_gt_heatmap(
+                coor_yx, (input_para['height'], input_para['width']),
+                self.sigma, is_visible)
+            return resized_image, gt_heatmaps
 
     #使用新的tf.Data API来生成batch
     def dataset_input_new(self, tf_file):
         dataset = tf.data.TFRecordDataset(tf_file)
         dataset = dataset.map(self._parse_function)
-        dataset = dataset.shuffle(3000)
+        dataset = dataset.shuffle(800)
         dataset = dataset.batch(self.batch_size)
         dataset = dataset.repeat()
         #迭代生成批次数据
         iterator = dataset.make_one_shot_iterator()
-        batched_images, batched_labels = iterator.get_next()
+        batched_images, batched_labels,batched_coor = iterator.get_next()
         #生成的batch中各个的维度必须相同
-        return batched_images, batched_labels
+        return batched_images, batched_labels,batched_coor
 
 
 #生成二进制文件测试
@@ -395,12 +437,24 @@ with tf.Session() as sess:
                 'blouse', dir_para['train_data_dir'], dir_para['tf_dir'])
     batch = gen.dataset_input_new(dir_para['tf_dir'] + '\\' + rec_name)
     sess.run(tf.global_variables_initializer())
-    img, lb = sess.run(batch)
-    '''
-    print(img)
+    img, lb,coor = sess.run(batch)
+    #print(img)
     scipy.misc.imsave('test1.png', img[0])
     scipy.misc.imsave('test2.png', img[1])
-    print(lb)
-    '''
-    #scipy.misc.imsave('hp1.png', lb[0])
-    #scipy.misc.imsave('hp2.png', lb[1])
+    lb_resized=tf.squeeze(tf.image.resize_bilinear(tf.expand_dims(lb[0],0),[256,256]))
+    lb_resized=sess.run(lb_resized)
+    scipy.misc.imsave('hp01.png', lb_resized[:,:,0])
+    scipy.misc.imsave('hp02.png', lb_resized[:,:,1])
+    #最大的值
+    max_val=tf.reduce_max(lb[0],0)
+    max_val=tf.reduce_max(max_val,0)
+    print(sess.run(max_val))
+
+    #最大值的位置
+    max_idx_list=[]
+    for i in range(lb_resized.shape[-1]):
+        ind=np.unravel_index(np.argmax(lb_resized[:,:,i]),lb_resized.shape[:2])
+        max_idx_list.append(ind)
+    print(max_idx_list)
+
+    print(coor[0])

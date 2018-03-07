@@ -177,3 +177,8 @@ tf.nn.batch_normalization
 2、读取tfrecord时若各张image、各张label的维度不一定一致该如何处理？
     报错时都是由于reshape的shape参数不对，读取时记得shape这个tensor要么所有值已知，要么所有值未知，不能混！！
     （如[features['h'],features['w'],3]这样会报错）
+
+2018.03.07
+1、py3的tf的/操作，不管分子分母的类型，结果都是float64类型。而且分子分母类型需要一致。
+2、逆序一个tensor [::-1]
+3、tf.argmax(input,axis) 返回最大位置的索引,axis为None的话就按照0处理。

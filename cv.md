@@ -182,3 +182,6 @@ tf.nn.batch_normalization
 1、py3的tf的/操作，不管分子分母的类型，结果都是float64类型。而且分子分母类型需要一致。
 2、逆序一个tensor [::-1]
 3、tf.argmax(input,axis) 返回最大位置的索引,axis为None的话就按照0处理。
+
+2018.03.08
+1、取得一个运行时形状才确定的tensor的形状的某个维度，用tf.shape(xx)[x]。

@@ -70,7 +70,8 @@ layer_para = {
 #train
 train_para = {
     'batch_size': 8,
-    'max_iter': 200000,
+    'max_iter': 100000,
+    'save_freq':5000,
     'show_lr_freq': 500,
     'show_loss_freq': 50,
     'snapshot_freq': 5000,
@@ -84,13 +85,13 @@ train_para = {
 dir_para = {
     #TODO
     'trained_model_dir':
-    '',
+    '/home/b3336/singlehandpose/clothes/trained_model/',
     'log_dir':
-    '',
+    '/home/b3336/singlehandpose/clothes/log/',
     'tf_dir':
-    'D:\\tfrecords\\',
+    '/home/b3336/singlehandpose/clothes/tfrec/',
     'train_data_dir':
-    'C:\\Users\\oldhen\\Downloads\\tianchi\\fashionAI_key_points_train_20180227\\train',
+    '/home/b3336/singlehandpose/clothes/train/',
     'test_data_dir':
     ''
 }

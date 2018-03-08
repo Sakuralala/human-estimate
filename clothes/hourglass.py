@@ -49,14 +49,16 @@ class HourglassModel():
                         do_normalization=False,
                         do_RELU=False)
                     #loss的计算
-                    batch_size = inter_output.get_shape().as_list()[0]
-                    height = inter_output.get_shape().as_list()[1]
-                    width = inter_output.get_shape().as_list()[2]
+                    batch_size = tf.shape(inter_output)[0]
+                    print(inter_output)
+                    height = inter_output.get_shape()[1]
+                    width = inter_output.get_shape()[2]
                     #64x64->256x256
                     #pred_heatmaps=tf.image.resize_bilinear(inter_output,[height*4,width*4],'predicted_heatmaps')
                     loss = tf.nn.l2_loss(
                         inter_output - gt_heatmaps,
-                        'inter_loss' + str(i + 1)) / batch_size
+                        'inter_loss' + str(i + 1)) / tf.cast(batch_size,tf.float32)
+                    tf.summary.scalar(loss.op.name,loss)
                     self.loss.append(loss)
                     if i != self.stack_number - 1:
                         conv3 = conv_block(

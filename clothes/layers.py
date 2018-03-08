@@ -39,7 +39,7 @@ def conv_block(input,
     with tf.variable_scope(name):
         weights = _variable_with_weight_decay(name, [
             kernel_size, kernel_size,
-            input.get_shape().as_list()[-1], kernel_number
+            input.get_shape()[-1], kernel_number
         ], layer_para['weight_stddev'], layer_para['weight_decay'])
         conv = tf.nn.conv2d(
             input,

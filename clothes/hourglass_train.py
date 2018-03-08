@@ -11,31 +11,33 @@ from params_clothes import *
 
 
 def train(category):
-    # 训练好的模型参数
-    if not os.path.exists(dir_para['trained_model_dir']):
-        os.mkdir(dir_para['trained_model_dir'])
-        print('Created trained_model dir:', dir_para['trained_model_dir'])
-    gen=clothes_batch_generater(train_para['batch_size'])
-    # 用以作为输入的二进制文件
-    if not os.path.exists(dir_para['tf_dir']):
-        os.mkdir(dir_para['tf_dir'])
-        print('Created tfrecords dir:', dir_para['tf_dir'])
-    rec_name=category+'.tfrec'
-    for (root,dirs,files) in os.walk(dir_para['tf_dir']):
-        if rec_name not in files:
-            gen.convert_to_tfrecords_single(dir_para['train_data_dir'],dir_para['tf_dir'])
-    #生成batch
-    batch=gen.batch_generate(dir_para['tf_dir']+'/'+rec_name)
-    # Start TF
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
+    # 训练好的模型参数
+        if not os.path.exists(dir_para['trained_model_dir']):
+            os.mkdir(dir_para['trained_model_dir'])
+            print('Created trained_model dir:', dir_para['trained_model_dir'])
+        gen=clothes_batch_generater(category,train_para['batch_size'])
+	# 用以作为输入的二进制文件
+        if not os.path.exists(dir_para['tf_dir']):
+            os.mkdir(dir_para['tf_dir'])
+            print('Created tfrecords dir:', dir_para['tf_dir'])
+        rec_name=category+'.tfrec'
+        for (root,dirs,files) in os.walk(dir_para['tf_dir']):
+            if rec_name not in files:
+                gen.convert_to_tfrecords_single(category,dir_para['train_data_dir'],dir_para['tf_dir'])
+	#生成batch
+        batch=gen.dataset_input_new(dir_para['tf_dir']+'/'+rec_name)
+	# Start TF
         tf.train.start_queue_runners(sess=sess)
 
         #Model
-        model = HourglassModel(len(categories_dict[category]))
+        model = HourglassModel(1+len(categories_dict[category]))
+        print(batch[0])
         model.build_model(batch[0], batch[1])
 
-        loss = sum(model.loss)
+        loss=tf.add_n(model.loss,'total_loss')
+        tf.summary.scalar(loss.op.name,loss)
         #全局步数
         global_step = tf.Variable(0, trainable=False, name="global_step")
         # Solver
@@ -76,10 +78,10 @@ def train(category):
                 print('Current lr:', sess.run(lr))
             sys.stdout.flush()
 
-            if (step % train_para['trained_model_freq']) == 0:
+            if (step % train_para['save_freq']) == 0:
                 saver.save(
                     sess,
-                    "%s/%s" % (train_para['trained_model_dir'], category),
+                    "%s/%s" % (dir_para['trained_model_dir'], category),
                     global_step=step)
                 print('Saved a trained_model.')
                 sys.stdout.flush()
@@ -97,9 +99,9 @@ def main():
     parser.add_argument('category', type=str, choices=categories)
     #返回Namespace对象
     args = parser.parse_args()
-    print(args.category)
+    #print(args.category)
     #一次只能训练一个类别
-    #train(args.category)
+    train(args.category)
 
 
 if __name__ == '__main__':

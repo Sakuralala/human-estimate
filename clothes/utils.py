@@ -23,14 +23,14 @@ def make_gt_heatmap(keypoint_coordinates, map_size, sigma, valid_vec):
             cond_val = tf.ones_like(
                 keypoint_coordinates[:, 0], dtype=tf.float32)
             cond_val = tf.greater(cond_val, 0.5)
-        # 在map_size width范围内的坐标
-        cond_1_in = tf.logical_and(
-            tf.less(keypoint_coordinates[:, 0], map_size[1] - 1),
-            tf.greater(keypoint_coordinates[:, 0], 0))
         # 在map_size height范围内的坐标
+        cond_1_in = tf.logical_and(
+            tf.less(keypoint_coordinates[:, 0], map_size[0] ),
+            tf.greater(keypoint_coordinates[:, 0], -1))
+        # 在map_size width范围内的坐标
         cond_2_in = tf.logical_and(
-            tf.less(keypoint_coordinates[:, 1], map_size[0] - 1),
-            tf.greater(keypoint_coordinates[:, 1], 0))
+            tf.less(keypoint_coordinates[:, 1], map_size[1] ),
+            tf.greater(keypoint_coordinates[:, 1], -1))
         cond_in = tf.logical_and(cond_1_in, cond_2_in)
         #即 可见又在crop_image范围内的坐标
         cond = tf.logical_and(cond_val, cond_in)
@@ -143,7 +143,7 @@ def boundary_calculate(label,height,width):
     #可见的点 先x后y
     kpt_visible=tf.boolean_mask(label[:,:2],tf.cast(label[:,2],tf.bool))
     min_coor=tf.maximum(tf.reduce_min(kpt_visible,0),0)
-    max_coor=tf.minimum(tf.reduce_max(kpt_visible,0),[width,height])
+    max_coor=tf.minimum(tf.reduce_max(kpt_visible,0),[width-1,height-1])
     #[y,x]
     return min_coor[::-1], max_coor[::-1]
 
@@ -159,8 +159,16 @@ def kpt_coor_translate(coor,scale,old_center,new_center):
     #和后面scale乘时需要变为float
     coor_relative=tf.cast(coor-old_center,tf.float32)
     #tf.Print(coor_relative,[coor_relative],'coor_rel:')
-    new_coor_relative=tf.cast(coor_relative*scale,tf.int32)
+    #new_coor_relative=tf.cast((coor_relative+0.5)*scale-0.5,tf.int32)
+    new_coor_relative=(coor_relative+0.5)*scale-0.5
     new_coor=new_coor_relative+new_center
+    new_size=new_center*2+1
+    new_coor_x=tf.minimum(tf.maximum(new_coor[:,1],0.0),new_size[1])
+    new_coor_y=tf.minimum(tf.maximum(new_coor[:,0],0),new_size[0])
+    #print(new_coor_y.shape)
+    new_coor=tf.stack([new_coor_y,new_coor_x],-1)    
+    new_coor=tf.cast(tf.round(new_coor),tf.int32)
+    #print(new_coor.shape)
 
     return new_coor
 

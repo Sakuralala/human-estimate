@@ -343,7 +343,7 @@ class clothes_batch_generater():
             #不crop成正方形直接resize试一下
             #cropped_resized_size_square=tf.maximum(sub[0],sub[1])
             #old_center = (max_coor+min_coor)//2 
-            old_center=min_coor+sub//2
+            old_center=tf.cast(min_coor,tf.float32)+tf.cast(sub,tf.float32)/2
 
 
             #到此处应该没有错误
@@ -353,8 +353,8 @@ class clothes_batch_generater():
             scale=tf.cast(cropped_resized_size,tf.float32)/tf.cast(sub,tf.float32)
             #tf.Print(scale,[scale],'scale:')
             #经过resize后新的关键点坐标
-            coor_yx = kpt_coor_translate(coor_yx, scale, old_center,
-                                         cropped_resized_size // 2)
+            coor_yx = kpt_coor_translate(tf.cast(coor_yx,tf.float32), scale, old_center,
+                                         tf.cast(cropped_resized_size,tf.float32)/2-1)
             #coor_yx=tf.cast(tf.cast(coor_yx,tf.float32)*scale,tf.int32)
             min_coor = tf.cast(min_coor, tf.float32)
             max_coor = tf.cast(max_coor, tf.float32)
@@ -423,6 +423,7 @@ for cat in categories:
 '''
 
 #从tfrecords中读取测试
+'''
 with tf.Session() as sess:
     #print(len(categories_dict['blouse']))
     gen = clothes_batch_generater('blouse', 2)
@@ -458,3 +459,4 @@ with tf.Session() as sess:
     print(max_idx_list)
 
     print(coor[0])
+    '''

@@ -27,17 +27,17 @@ class HourglassModel():
     def build_model(self, input, gt_heatmaps):
         with tf.variable_scope('hourglass_model'):
             conv1 = conv_block(input, 7, 2, 64, 'conv1')
-            res1 = residual_block(conv1, 1, int(self.output_features / 2),
+            res1 = residual_block(conv1, 1, self.output_features // 2,
                                   self.output_features, 'res1')
             pool = max_pool(res1, 2, 2)
-            res2 = residual_block(pool, 1, int(self.output_features / 2),
+            res2 = residual_block(pool, 1, self.output_features // 2,
                                   self.output_features, 'res2')
-            inter_total = residual_block(res2, 1, int(
-                self.output_features / 2), self.output_features, 'res3')
+            inter_total = residual_block(res2, 1, 
+                self.output_features // 2, self.output_features, 'res3')
 
             for i in range(self.stack_number):
                 with tf.variable_scope('hourglass' + str(i + 1)):
-                    hourglass = self.hourglass(inter_total, self.stage)
+                    hourglass = self.hourglass2(inter_total, self.stage)
                     conv2 = conv_block(hourglass, 1, 1, self.output_features,
                                        'conv1')
                     inter_output = conv_block(
@@ -76,10 +76,10 @@ class HourglassModel():
             input = residual_block(
                 input,
                 1,
-                int(self.output_features / 2),
+                self.output_features // 2,
                 self.output_features,
                 name='res1')
-            up = residual_block(input, 1, int(self.output_features / 2),
+            up = residual_block(input, 1, self.output_features // 2,
                                 self.output_features, 'res2')
             down = max_pool(up, 2, 2, 'maxpooling')
             #down=residual_block(down,1,int(self.output_features/2),self.output_features)
@@ -87,16 +87,44 @@ class HourglassModel():
             if stage > 0:
                 ret = self.hourglass(down, stage)
             else:
-                ret = residual_block(down, 1, int(self.output_features / 2),
+                ret = residual_block(down, 1, self.output_features // 2,
                                      self.output_features, 'inest_res1')
-                ret = residual_block(ret, 1, int(self.output_features / 2),
+                ret = residual_block(ret, 1, self.output_features // 2,
                                      self.output_features, 'inest_res2')
-                ret = residual_block(ret, 1, int(self.output_features / 2),
+                ret = residual_block(ret, 1, self.output_features // 2,
                                      self.output_features, 'inest_res3')
             height = ret.get_shape().as_list()[1]
             wigth = ret.get_shape().as_list()[2]
             up2 = tf.image.resize_bilinear(ret, [height * 2, wigth * 2])
             total = tf.add(up, up2)
-            total = residual_block(total, 1, int(self.output_features / 2),
+            total = residual_block(total, 1, self.output_features // 2,
                                    self.output_features, 'res3')
+            return total
+
+    def hourglass2(self, input, stage):
+        with tf.variable_scope('stage' + str(stage)):
+            input = residual_block(
+                input,
+                1,
+                self.output_features // 2,
+                self.output_features,
+                name='res1')
+            up = residual_block(input, 1, self.output_features // 2,
+                                self.output_features, 'res2')
+            down = max_pool(input, 2, 2, 'maxpooling')
+            down = residual_block(down, 1, self.output_features // 2,
+                                  self.output_features)
+            stage -= 1
+            if stage > 0:
+                ret = self.hourglass(down, stage)
+            else:
+                ret = residual_block(down, 1, self.output_features // 2,
+                                     self.output_features, 'inest_res')
+            ret = residual_block(ret, 1, self.output_features // 2,
+                                 self.output_features, 'res3')
+            height = ret.get_shape().as_list()[1]
+            width = ret.get_shape().as_list()[2]
+            ret = tf.image.resize_bilinear(ret, [height * 2, width * 2])
+            total = ret + up
+
             return total

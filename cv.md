@@ -207,3 +207,5 @@ tf.nn.batch_normalization
 
 4、字符串存入tfrec，先将str转换为bytes，xx.encode()
 sess.run()之后，再使用xx.decode()来解码为字符串。
+
+5、get_shape()、shape()区别？

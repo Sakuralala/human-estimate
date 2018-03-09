@@ -1,6 +1,4 @@
 #使用hourglass结构来进行关节点预测
-from __future__ import print_function, unicode_literals
-
 import tensorflow as tf
 import os
 import sys
@@ -30,14 +28,15 @@ def train(category):
         batch=gen.dataset_input_new(dir_para['tf_dir']+'/'+rec_name)
 	# Start TF
         tf.train.start_queue_runners(sess=sess)
-
+        #为了之后test能够喂进不同的数据
+        x=tf.placeholder(tf.float32,name='input')
+        #y=tf.placeholder(tf.float32,name='gt')
         #Model
         model = HourglassModel(1+len(categories_dict[category]))
-        print(batch[0])
-        model.build_model(batch[0], batch[1])
-
-        loss=tf.add_n(model.loss,'total_loss')
-        tf.summary.scalar(loss.op.name,loss)
+        #构建网络
+        model.build_model(x)
+        #loss计算
+        loss=model.loss_calculate(batch[1])
         #全局步数
         global_step = tf.Variable(0, trainable=False, name="global_step")
         # Solver
@@ -70,7 +69,7 @@ def train(category):
         # Training loop
         while step < train_para['max_iter']:
             _, loss_v, summ, step = sess.run(
-                [train_op, loss, merged_op, global_step])
+                [train_op, loss, merged_op, global_step],feed_dict={x:batch[0]})
             writer.add_summary(summ, step)
             #if (i % train_para['show_loss_freq']) == 0:
             print('Iteration %d\t Loss %.3e' % (step, loss_v))

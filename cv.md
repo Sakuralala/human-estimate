@@ -158,7 +158,7 @@ tf.nn.batch_normalization
 4、tensorflow保存与恢复模型：http://cv-tricks.com/tensorflow-tutorial/save-restore-tensorflow-models-quick-complete-tutorial/
 
 2018.03.05
-1、tf.boolean_mask(tensor,mask)
+1、tf.boolean_mask(tensor,mask) 用以隐藏tensor中的特定元素。
 2、切片操作会造成降维，切记！！！！！！！！
 
 2018.03.06
@@ -185,3 +185,22 @@ tf.nn.batch_normalization
 
 2018.03.08
 1、取得一个运行时形状才确定的tensor的形状的某个维度，用tf.shape(xx)[x]。
+
+2018.03.09
+1、写csv文件：
+ f=open('result.csv','a',newline='')
+    writer=csv.writer(f)
+    for key in ret:
+        res=[key,cat]
+        for elem in ret[key]:
+            res.append(elem)
+        writer.writerow(res)
+
+2、载入模型
+        saver = tf.train.import_meta_graph(meta文件位置)
+        saver.restore(sess,check_point位置)
+        graph = tf.get_default_graph()
+        取得一个tensor
+        graph.get_tensor_by_name(xxx) 
+
+3、为了便于test，输入最好使用place_holder以便测试时换输入。

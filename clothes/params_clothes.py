@@ -90,8 +90,12 @@ dir_para = {
     '/home/b3336/singlehandpose/clothes/log/',
     'tf_dir':
     '/home/b3336/singlehandpose/clothes/tfrec/',
+    'tf_dir_test':
+    '/home/b3336/singlehandpose/clothes/tfrec_test/',
     'train_data_dir':
     '/home/b3336/singlehandpose/clothes/train/',
     'test_data_dir':
     ''
 }
+
+thred=10e-12

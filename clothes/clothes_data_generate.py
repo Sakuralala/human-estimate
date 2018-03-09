@@ -22,7 +22,6 @@ def _float_feature(val):
     return tf.train.Feature(float_list=tf.train.FloatList(value=[val]))
 
 
-#TODO:改为类
 class clothes_batch_generater():
     def __init__(self,
                  category,
@@ -45,8 +44,8 @@ class clothes_batch_generater():
         self.crop_and_resize = crop_and_resize
         self.sigma = sigma
         self.cropped_resized_size = cropped_resized_size
-        self.coor_noise=coor_noise
-        self.crop_center_noise=crop_center_noise
+        self.coor_noise = coor_noise
+        self.crop_center_noise = crop_center_noise
         self.category = category
 
     def _coor_read(self, cat, coor):
@@ -70,6 +69,22 @@ class clothes_batch_generater():
         #kx3
         return np.asarray(ret, np.int32)
 
+    def _coor_read_full(self, coor):
+        '''
+        description:用以将标签中的字符串三元组坐标转换为np.ndarray并返回之,全关键点版本，即不分类别
+        args:
+            coor:读取csv文件中的关节点部分
+        '''
+        ret = []
+        for i, xyv in enumerate(coor):
+            if xyv[0] == '-':
+                ret.append(np.asarray([0, 0, 0], np.int32))
+            else:
+                xyv = np.asarray([int(i) for i in xyv.split('_')], np.int)
+                ret.append(xyv)
+        #kx3
+        return np.asarray(ret, np.int32)
+
     def _data_generate_single(
             self,
             category,
@@ -77,14 +92,18 @@ class clothes_batch_generater():
     ):
         '''
         description:用以生成对应category的图片与标签，返回两个list,分别为images和labels
+        或者在test时返回图片和对应名字
         args:
             path:训练的目录
             category:服饰的类别，为了节省内存，还是一个个来把。。。
         '''
-        csv_file = csv.reader(open(path + '/Annotations/train.csv', 'r'))
-
         images = []
-        labels = []
+        if train_para['is_train']:
+            labels = []
+            csv_file = csv.reader(open(path + '/Annotations/train.csv', 'r'))
+        else:
+            img_names = []
+            csv_file = csv.reader(open(path + '/Annotations/test.csv', 'r'))
         header = None
         for i, row in enumerate(csv_file):
             #先把表头读出来
@@ -94,18 +113,17 @@ class clothes_batch_generater():
                 if category != row[1]:
                     continue
                 img_name = path + '/' + row[0]
-                #k*3
-                coor = self._coor_read(category, row[2:])
                 img = np.asarray(Image.open(img_name))
-                #resize到统一大小
-                #if img.shape[0] != input_para['height'] or img.shape[1] != input_para['width']:
-                #    img = cv2.resize(
-                #        img, (input_para['height'], input_para['width']))
-                #resize改为到读取tfrec时再做避免坐标转换两次
                 images.append(img)
-                #size*k*3
-                labels.append(coor)
-        return images, labels
+                if train_para['is_train']:
+                    #k*3
+                    coor = self._coor_read(category, row[2:])
+                    #size*k*3
+                    labels.append(coor)
+                    return images, labels
+                else:
+                    img_names.append(img_name)
+                    return images, img_names
 
     def _data_generate(
             self,
@@ -153,43 +171,38 @@ class clothes_batch_generater():
         '''
         description:用以将images和labels转换为tensorflow的专用二进制格式便于后续读取
         args:
-            images:包含单个类别的images
-            labels_dict:包含单个类别的labels
             category:类别名
-            file_path:生成的文件存放的路径
+            data_path:数据的路径
+            tf_path:生成的tfrec文件的存放路径
         '''
         print("Start coverting to tfrecord.")
         sys.stdout.flush()
         if category == None:
             raise ValueError("Please give an correct category.")
-        images, labels = self._data_generate_single(category, data_path)
+        ret = self._data_generate_single(category, data_path)
         file_name = tf_path + '/' + category + '.tfrec'
-        num = len(images)
-        print(num)
-        sys.stdout.flush()
+        num = len(ret[0])
+        #print(num)
+        #sys.stdout.flush()
         with tf.python_io.TFRecordWriter(file_name) as writer:
             #序列化并填充至example  然后写入磁盘
-            #方向
-            #labels.shape 返回元祖  在len以取得维数
             for i in range(num):
-                #if image[i]
-                image_raw = images[i].tostring()
-                #[512,512,3]
-                #print(images[i].shape)
-                label_raw = labels[i].tostring()
-                example = tf.train.Example(
-                    features=tf.train.Features(
-                        feature={
-                            'height': _int64_feature(images[i].shape[0]),
-                            'width': _int64_feature(images[i].shape[1]),
-                            'channels': _int64_feature(images[i].shape[2]),
-                            'label_raw': _bytes_feature(label_raw),
-                            'image_raw': _bytes_feature(image_raw)
-                        }))
+                image_raw = ret[0][i].tostring()
+                features = {
+                    'height': _int64_feature(ret[0][i].shape[0]),
+                    'width': _int64_feature(ret[0][i].shape[1]),
+                    'channels': _int64_feature(ret[0][i].shape[2]),
+                    'image_raw': _bytes_feature(image_raw)
+                }
+                if train_para['is_train']:
+                    label_raw = ret[1][i].tostring()
+                    features['label_raw'] = _bytes_feature(label_raw)
+                else:  #str类型不需要再进行tostring操作
+                    features['image_name'] = _bytes_feature(ret[1][i])
+                example = tf.train.Example(features=tf.train.Features(features))
                 writer.write(example.SerializeToString())
         print("Covert %s done." % category)
         sys.stdout.flush()
-        images, labels = [], []
 
     def convert_to_tfrecords(
             self,
@@ -239,79 +252,6 @@ class clothes_batch_generater():
         print("Covert all done.")
         sys.stdout.flush()
 
-    def _read_from_tfrecords(self, file_queue):
-        reader = tf.TFRecordReader()
-        key, val = reader.read(file_queue)
-        #返回的feature是一个字典
-        feature = tf.parse_single_example(
-            val,
-            features={
-                'image_raw': tf.FixedLenFeature([], tf.string),
-                'label_raw': tf.FixedLenFeature([], tf.string)
-            })
-
-        image = tf.decode_raw(feature['image_raw'], tf.float32)
-        #/255.0-0.5是为了算均值
-        reshaped_image = tf.reshape(image, [
-            input_para['height'], input_para['width'], input_para['channels']
-        ]) / 255.0 - 0.5
-        #k*3
-        label = tf.decode_raw(feature['label_raw'], tf.float32)
-        #不能是不确定的值
-        #reshaped_label = tf.reshape(label, [-1, 3])
-        reshaped_label = tf.reshape(label,
-                                    [len(categories_dict[self.category]), 3])
-        #关键点数量
-        #kpt_num=reshaped_label.get_shape().as_list()[0]
-        is_visible = tf.cast(reshaped_label[:, -1], tf.bool)
-        #[k,2]
-        coor_yx = tf.cast(
-            tf.stack([reshaped_label[:, 1], reshaped_label[:, 0]], -1),
-            tf.float32)
-        gt_heatmaps = make_gt_heatmap(
-            coor_yx, (input_para['height'], input_para['width'])
-            if self.crop_and_resize == False else (self.cropped_resized_size,
-                                                   self.cropped_resized_size),
-            self.sigma, is_visible)
-        #TODO:加上数据增强(data augement)
-        if self.crop_and_resize:
-            min_coor, max_coor = boundary_calculate(reshaped_label)
-            cropped_image = image_crop_resize(
-                tf.expand_dims(reshaped_image, 0), [min_coor, max_coor],
-                self.cropped_resized_size)
-            return cropped_image, gt_heatmaps
-
-        return reshaped_image, gt_heatmaps
-
-    def batch_generate(self, tf_file):
-        if not os.path.exists(tf_file):
-            raise ValueError("Please give an correct path.")
-
-    #生成输入文件队列   注意参数应该是string tensor  所以加个[]
-        if train_para['is_train']:
-            file_queue = tf.train.string_input_producer([tf_file])
-        else:
-            file_queue = tf.train.string_input_producer([tf_file], 2)
-
-        read_result = self._read_from_tfrecords(file_queue)
-        if train_para['is_train']:
-            min_num = int(input_para['train_num'] * 0.5)
-            images_batch, labels_batch = tf.train.shuffle_batch(
-                [read_result[0], read_result[1]],
-                batch_size=self.batch_size,
-                num_threads=16,
-                min_after_dequeue=min_num,
-                capacity=min_num + self.batch_size * 10)
-        else:
-            min_num = int(input_para['test_num'] * 0.36)
-            images_batch, labels_batch = tf.train.batch(
-                [read_result[0], read_result[1]],
-                batch_size=self.batch_size,
-                num_threads=8,
-                capacity=10000)
-
-        return images_batch, labels_batch
-
     def _parse_function(self, example_proto):
         features = {
             "image_raw": tf.FixedLenFeature((), tf.string),
@@ -340,13 +280,19 @@ class clothes_batch_generater():
         #[k,2] 在原尺寸图像上的坐标
         coor_yx = tf.stack([reshaped_label[:, 1], reshaped_label[:, 0]], -1)
         if self.coor_noise:
-            coor_yx+=tf.truncated_normal([tf.shape(coor_yx)[0],tf.shape(coor_yx)[1]],mean=0.0,stddev=1.5)
-	    #保证在图像范围内
-            coor_yx=tf.maxium(tf.minimum(coor_yx,[height-1,width-1]),[0,0])
+            coor_yx += tf.truncated_normal(
+                [tf.shape(coor_yx)[0],
+                 tf.shape(coor_yx)[1]],
+                mean=0.0,
+                stddev=1.5)
+            #保证在图像范围内
+            coor_yx = tf.maximum(
+                tf.minimum(coor_yx, [height - 1, width - 1]), [0, 0])
         #TODO:加上数据增强(data augement)
-	#加上rotate、flip等，那么对应的坐标点如何计算？
-        reshaped_image=tf.image.random_contrast(reshaped_image,lower=0.5,upper=1.2)
-	
+#加上rotate、flip等，那么对应的坐标点如何计算？
+        reshaped_image = tf.image.random_contrast(
+            reshaped_image, lower=0.5, upper=1.2)
+
         #要crop的话
         if self.crop_and_resize:
             min_coor, max_coor = boundary_calculate(reshaped_label, height,
@@ -355,33 +301,42 @@ class clothes_batch_generater():
             #tf.Print(sub,[sub],'sub:')
             #不crop成正方形直接resize试一下
             #cropped_resized_size_square=tf.maximum(sub[0],sub[1])
-            #old_center = (max_coor+min_coor)//2 
-            old_center=tf.cast(min_coor,tf.float32)+tf.cast(sub,tf.float32)/2
+            #old_center = (max_coor+min_coor)//2
+            old_center = tf.cast(min_coor,
+                                 tf.float32) + tf.cast(sub, tf.float32) / 2
             if self.crop_center_noise:
-                old_center+=tf.truncated_normal([tf.shape(old_center)[0],tf.shape(old_center)[1]],mean=0.0,stddev=10)
-                sub=tf.maxium(old_center-tf.cast(min_coor,tf.float32),tf.cast(max_coor-old_center,tf.float32))*2 
-		#不能超出图片尺寸
-		#sub=tf.maxium(tf.minimum(sub,[height,width]),[0,0])
+                old_center += tf.truncated_normal(
+                    [tf.shape(old_center)[0],
+                     tf.shape(old_center)[1]],
+                    mean=0.0,
+                    stddev=10)
+                sub = tf.maximum(old_center - tf.cast(min_coor, tf.float32),
+                                 tf.cast(max_coor - old_center,
+                                         tf.float32)) * 2
+#不能超出图片尺寸
+#sub=tf.maximum(tf.minimum(sub,[height,width]),[0,0])
 
-		#新的边界点
-                #min_coor=old_center-crop_size/2
-                #min_coor=tf.maxium(tf.minimum(min_coor,[height-1,width-1]),[0,0])
-                #max_coor=old_center+crop_size/2 
-                #max_coor=tf.maxium(tf.minimum(max_coor,[height-1,width-1]),[0,0])
+#新的边界点
+#min_coor=old_center-crop_size/2
+#min_coor=tf.maximum(tf.minimum(min_coor,[height-1,width-1]),[0,0])
+#max_coor=old_center+crop_size/2
+#max_coor=tf.maximum(tf.minimum(max_coor,[height-1,width-1]),[0,0])
 
-            #scale必须是浮点数
+#scale必须是浮点数
             cropped_resized_size = tf.stack(
                 [self.cropped_resized_size, self.cropped_resized_size])
-            scale=tf.cast(cropped_resized_size,tf.float32)/tf.cast(sub,tf.float32)
+            scale = tf.cast(cropped_resized_size, tf.float32) / tf.cast(
+                sub, tf.float32)
             #tf.Print(scale,[scale],'scale:')
             #经过resize后新的关键点坐标
-            coor_yx = kpt_coor_translate(tf.cast(coor_yx,tf.float32), scale, old_center,
-                                         tf.cast(cropped_resized_size,tf.float32)/2-1)
+            coor_yx = kpt_coor_translate(
+                tf.cast(coor_yx, tf.float32), scale, old_center,
+                tf.cast(cropped_resized_size, tf.float32) / 2 - 1)
             #coor_yx=tf.cast(tf.cast(coor_yx,tf.float32)*scale,tf.int32)
             min_coor = tf.cast(min_coor, tf.float32)
             max_coor = tf.cast(max_coor, tf.float32)
-            height=tf.cast(height,tf.float32)
-            width=tf.cast(width,tf.float32)
+            height = tf.cast(height, tf.float32)
+            width = tf.cast(width, tf.float32)
             #在原图上所占的比例
             boxes = tf.stack([
                 min_coor[0] / height, min_coor[1] / width,
@@ -390,14 +345,16 @@ class clothes_batch_generater():
             boxes_ind = tf.range(1)
             #crop并且resize到指定大小
             cropped_resized_image = tf.image.crop_and_resize(
-                tf.expand_dims(reshaped_image,0), tf.expand_dims(boxes,0), boxes_ind, cropped_resized_size)
+                tf.expand_dims(reshaped_image, 0), tf.expand_dims(boxes, 0),
+                boxes_ind, cropped_resized_size)
             cropped_resized_image = tf.squeeze(cropped_resized_image)
             gt_heatmaps = make_gt_heatmap(
                 coor_yx,
                 (self.cropped_resized_size, self.cropped_resized_size),
                 self.sigma, is_visible)
             #coor=tf.concat([coor_yx,tf.cast(tf.expand_dims(is_visible,-1),tf.int32)],-1)
-            cropped_resized_image.set_shape([self.cropped_resized_size,self.cropped_resized_size,3])
+            cropped_resized_image.set_shape(
+                [self.cropped_resized_size, self.cropped_resized_size, 3])
             return cropped_resized_image, gt_heatmaps
         else:  #不crop，直接resize(保证batch中各个的维度一致)
             resized_image = tf.image.resize_bilinear(
@@ -415,19 +372,47 @@ class clothes_batch_generater():
             gt_heatmaps = make_gt_heatmap(
                 coor_yx, (input_para['height'], input_para['width']),
                 self.sigma, is_visible)
-            resized_image.set_shape([input_para['height'],input_para['width'],3])
+            resized_image.set_shape(
+                [input_para['height'], input_para['width'], 3])
             return resized_image, gt_heatmaps
+
+    #test时的处理方式
+    def _parse_function2(self, example_proto):
+        features = {
+            "image_raw": tf.FixedLenFeature((), tf.string),
+            "image_name": tf.FixedLenFeature((), tf.string),
+            "height": tf.FixedLenFeature((), tf.int64),
+            "width": tf.FixedLenFeature((), tf.int64),
+            'channels': tf.FixedLenFeature((), tf.int64)
+        }
+        parsed_features = tf.parse_single_example(example_proto, features)
+        image = tf.decode_raw(parsed_features['image_raw'], tf.uint8)
+        height = tf.cast(parsed_features['height'], tf.int32)
+        width = tf.cast(parsed_features['width'], tf.int32)
+        channels = tf.cast(parsed_features['channels'], tf.int32)
+        shape = tf.stack([height, width, channels])
+        #normalize [-.5,.5]TODO：test时需不需要norm?
+        reshaped_image = tf.reshape(tf.cast(image, tf.float32),shape)
+        image_name=parsed_features['image_name']
+        #TODO卷积操作需要知道shape的每一维
+        #reshaped_image.set_shape([])
+        return reshaped_image,image_name
 
     #使用新的tf.Data API来生成batch
     def dataset_input_new(self, tf_file):
         dataset = tf.data.TFRecordDataset(tf_file)
-        dataset = dataset.map(self._parse_function)
-        dataset = dataset.shuffle(800)
+        if train_para['is_train']:
+            dataset = dataset.map(self._parse_function)
+            dataset = dataset.shuffle(800)
+            dataset = dataset.repeat() 
+        else:
+            dataset = dataset.map(self._parse_function2)
+            dataset = dataset.repeat(1) 
         dataset = dataset.batch(self.batch_size)
-        dataset = dataset.repeat()
+            
         #迭代生成批次数据
         iterator = dataset.make_one_shot_iterator()
-        batched_images, batched_labels= iterator.get_next()
+        batched_images, batched_labels = iterator.get_next()
         #生成的batch中各个的维度必须相同
         return batched_images, batched_labels
 
@@ -446,7 +431,6 @@ for cat in categories:
 '''
 
 #从tfrecords中读取测试
-'''
 with tf.Session() as sess:
     #print(len(categories_dict['blouse']))
     gen = clothes_batch_generater('blouse', 2)
@@ -460,6 +444,7 @@ with tf.Session() as sess:
             gen.convert_to_tfrecords_single(
                 'blouse', dir_para['train_data_dir'], dir_para['tf_dir'])
     batch = gen.dataset_input_new(dir_para['tf_dir'] + '\\' + rec_name)
+    '''
     sess.run(tf.global_variables_initializer())
     img, lb,coor = sess.run(batch)
     #print(img)
@@ -483,3 +468,4 @@ with tf.Session() as sess:
 
     print(coor[0])
     '''
+    

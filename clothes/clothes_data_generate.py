@@ -8,6 +8,7 @@ from params_clothes import *
 from utils import *
 import sys
 import cv2
+import platform
 
 
 def _int64_feature(val):
@@ -100,10 +101,22 @@ class clothes_batch_generater():
         images = []
         if train_para['is_train']:
             labels = []
-            csv_file = csv.reader(open(path + '/Annotations/train.csv', 'r'))
+            if platform.system() == 'Linux':
+                csv_file = csv.reader(
+                    open(path + '/Annotations/train.csv', 'r'))
+            elif platform.system() == 'Windows':
+                csv_file = csv.reader(
+                    open(path + '\\Annotations\\train.csv', 'r'))
+            else:
+                raise ValueError("Unknown system.")
         else:
             img_names = []
-            csv_file = csv.reader(open(path + '/Annotations/test.csv', 'r'))
+            if platform.system() == 'Windows':
+                csv_file = csv.reader(open(path + '\\test.csv', 'r'))
+            elif platform.system() == 'Linux':
+                csv_file = csv.reader(open(path + '/test.csv', 'r'))
+            else:
+                raise ValueError("Unknown system.")
         header = None
         for i, row in enumerate(csv_file):
             #先把表头读出来
@@ -112,7 +125,10 @@ class clothes_batch_generater():
             else:
                 if category != row[1]:
                     continue
-                img_name = path + '/' + row[0]
+                if platform.system() == 'Windows':
+                    img_name = path + '\\' + row[0]
+                elif platform.system() == 'Linux':
+                    img_name = path + '/' + row[0]
                 img = np.asarray(Image.open(img_name))
                 images.append(img)
                 if train_para['is_train']:
@@ -120,10 +136,12 @@ class clothes_batch_generater():
                     coor = self._coor_read(category, row[2:])
                     #size*k*3
                     labels.append(coor)
-                    return images, labels
                 else:
                     img_names.append(img_name)
-                    return images, img_names
+        if train_para['is_train']:
+            return images,labels
+        else:
+            return images,img_names
 
     def _data_generate(
             self,
@@ -180,9 +198,12 @@ class clothes_batch_generater():
         if category == None:
             raise ValueError("Please give an correct category.")
         ret = self._data_generate_single(category, data_path)
-        file_name = tf_path + '/' + category + '.tfrec'
+        if platform.system() == 'Windows':
+            file_name = tf_path + '\\' + category + '.tfrec'
+        elif platform.system() == 'Linux':
+            file_name = tf_path + '/' + category + '.tfrec'
         num = len(ret[0])
-        #print(num)
+        print(num)
         #sys.stdout.flush()
         with tf.python_io.TFRecordWriter(file_name) as writer:
             #序列化并填充至example  然后写入磁盘
@@ -198,8 +219,9 @@ class clothes_batch_generater():
                     label_raw = ret[1][i].tostring()
                     features['label_raw'] = _bytes_feature(label_raw)
                 else:  #str类型不需要再进行tostring操作
-                    features['image_name'] = _bytes_feature(ret[1][i])
-                example = tf.train.Example(features=tf.train.Features(features))
+                    features['image_name'] = _bytes_feature(ret[1][i].encode())
+                example = tf.train.Example(
+                    features=tf.train.Features(feature=features))
                 writer.write(example.SerializeToString())
         print("Covert %s done." % category)
         sys.stdout.flush()
@@ -392,11 +414,11 @@ class clothes_batch_generater():
         channels = tf.cast(parsed_features['channels'], tf.int32)
         shape = tf.stack([height, width, channels])
         #normalize [-.5,.5]TODO：test时需不需要norm?
-        reshaped_image = tf.reshape(tf.cast(image, tf.float32),shape)
-        image_name=parsed_features['image_name']
+        reshaped_image = tf.reshape(tf.cast(image, tf.float32), shape)
+        image_name = parsed_features['image_name']
         #TODO卷积操作需要知道shape的每一维
         #reshaped_image.set_shape([])
-        return reshaped_image,image_name
+        return reshaped_image, image_name
 
     #使用新的tf.Data API来生成batch
     def dataset_input_new(self, tf_file):
@@ -404,12 +426,12 @@ class clothes_batch_generater():
         if train_para['is_train']:
             dataset = dataset.map(self._parse_function)
             dataset = dataset.shuffle(800)
-            dataset = dataset.repeat() 
+            dataset = dataset.repeat()
         else:
             dataset = dataset.map(self._parse_function2)
-            dataset = dataset.repeat(1) 
+            dataset = dataset.repeat(1)
         dataset = dataset.batch(self.batch_size)
-            
+
         #迭代生成批次数据
         iterator = dataset.make_one_shot_iterator()
         batched_images, batched_labels = iterator.get_next()
@@ -431,22 +453,26 @@ for cat in categories:
 '''
 
 #从tfrecords中读取测试
+train_para['is_train'] = False
 with tf.Session() as sess:
     #print(len(categories_dict['blouse']))
     gen = clothes_batch_generater('blouse', 2)
-    if not os.path.exists(dir_para['tf_dir']):
-        os.mkdir(dir_para['tf_dir'])
-        print('Created tfrecords dir:', dir_para['tf_dir'])
+    if not os.path.exists('D:\\tfrecords_test'):
+        os.mkdir('D:\\tfrecords_test')
+        print('Created tfrecords dir:' + 'D:\\tfrecords_test')
         sys.stdout.flush()
     rec_name = 'blouse.tfrec'
-    for (root, dirs, files) in os.walk(dir_para['tf_dir']):
+    for (root, dirs, files) in os.walk('D:\\tfrecords_test'):
         if rec_name not in files:
             gen.convert_to_tfrecords_single(
-                'blouse', dir_para['train_data_dir'], dir_para['tf_dir'])
-    batch = gen.dataset_input_new(dir_para['tf_dir'] + '\\' + rec_name)
-    '''
+                'blouse',
+                'C:\\Users\\oldhen\\Downloads\\tianchi\\fashionAI_key_points_test_a_20180227\\test',
+                'D:\\tfrecords_test')
+    batch = gen.dataset_input_new('D:\\tfrecords_test' + '\\' + rec_name)
     sess.run(tf.global_variables_initializer())
-    img, lb,coor = sess.run(batch)
+    img, name = sess.run(batch)
+    print(name[0].decode())
+    '''
     #print(img)
     scipy.misc.imsave('test1.png', img[0])
     scipy.misc.imsave('test2.png', img[1])
@@ -468,4 +494,3 @@ with tf.Session() as sess:
 
     print(coor[0])
     '''
-    

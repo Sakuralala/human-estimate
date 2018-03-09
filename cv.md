@@ -204,3 +204,6 @@ tf.nn.batch_normalization
         graph.get_tensor_by_name(xxx) 
 
 3、为了便于test，输入最好使用place_holder以便测试时换输入。
+
+4、字符串存入tfrec，先将str转换为bytes，xx.encode()
+sess.run()之后，再使用xx.decode()来解码为字符串。

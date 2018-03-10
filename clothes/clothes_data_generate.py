@@ -425,7 +425,7 @@ class clothes_batch_generater():
         dataset = tf.data.TFRecordDataset(tf_file)
         if train_para['is_train']:
             dataset = dataset.map(self._parse_function)
-            dataset = dataset.shuffle(800)
+            dataset = dataset.shuffle(2000)
             dataset = dataset.repeat()
         else:
             dataset = dataset.map(self._parse_function2)
@@ -452,6 +452,7 @@ for cat in categories:
     tmp = None
 '''
 
+'''
 #从tfrecords中读取测试
 train_para['is_train'] = False
 with tf.Session() as sess:
@@ -472,7 +473,6 @@ with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     img, name = sess.run(batch)
     print(name[0].decode())
-    '''
     #print(img)
     scipy.misc.imsave('test1.png', img[0])
     scipy.misc.imsave('test2.png', img[1])

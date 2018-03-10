@@ -209,3 +209,9 @@ tf.nn.batch_normalization
 sess.run()之后，再使用xx.decode()来解码为字符串。
 
 5、get_shape()、shape()区别？
+    tf中tensor有两种shape，分别为static (inferred) shape和dynamic (true) shape，其中static shape用于构建图，由创建这个tensor的op推断（inferred）得来，故又称inferred shape。如果该tensor的static shape未定义，则可用tf.shape()来获得其dynamic shape。
+    a.tf.shape()用以获取动态shape，即在运行时才知道的shape;get_shape()返回的是静态shape。
+    b.tf.shape()中数据的类型可以是tensor, list, array;a.get_shape()中a的数据类型只能是tensor,且返回的是一个元组（tuple）
+    c.set_shape()、reshape()的区别。set_shape更新tensor的static shape，不改变dynamic shape。reshape创建一个具备不同dynamic shape的新的tensor。
+
+6、gpu并行化使用，模型并行如何设置。

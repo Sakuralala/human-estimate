@@ -7,7 +7,7 @@ from PIL import Image
 from params_clothes import *
 from utils import *
 import sys
-import cv2
+#import cv2
 import platform
 
 
@@ -70,23 +70,8 @@ class clothes_batch_generater():
         #kx3
         return np.asarray(ret, np.int32)
 
-    def _coor_read_full(self, coor):
-        '''
-        description:用以将标签中的字符串三元组坐标转换为np.ndarray并返回之,全关键点版本，即不分类别
-        args:
-            coor:读取csv文件中的关节点部分
-        '''
-        ret = []
-        for i, xyv in enumerate(coor):
-            if xyv[0] == '-':
-                ret.append(np.asarray([0, 0, 0], np.int32))
-            else:
-                xyv = np.asarray([int(i) for i in xyv.split('_')], np.int)
-                ret.append(xyv)
-        #kx3
-        return np.asarray(ret, np.int32)
 
-    def _data_generate_single(
+    def data_generate_single(
             self,
             category,
             path='C:\\Users\\oldhen\\Downloads\\tianchi\\fashionAI_key_points_train_20180227\\train'
@@ -123,13 +108,13 @@ class clothes_batch_generater():
             if i == 0:
                 header = row
             else:
-                if category != row[1]:
+                if category != row[1] and category!='full':
                     continue
                 if platform.system() == 'Windows':
                     img_name = path + '\\' + row[0]
                 elif platform.system() == 'Linux':
                     img_name = path + '/' + row[0]
-                img = np.asarray(Image.open(img_name))
+                img = np.asarray(Image.open(img_name),np.uint8)
                 images.append(img)
                 if train_para['is_train']:
                     #k*3
@@ -138,10 +123,11 @@ class clothes_batch_generater():
                     labels.append(coor)
                 else:
                     img_names.append(img_name)
+                    img_names.append(row[0])
         if train_para['is_train']:
-            return images,labels
+            return np.asarray(images),labels
         else:
-            return images,img_names
+            return np.asarray(images),img_names
 
     def _data_generate(
             self,
@@ -197,7 +183,7 @@ class clothes_batch_generater():
         sys.stdout.flush()
         if category == None:
             raise ValueError("Please give an correct category.")
-        ret = self._data_generate_single(category, data_path)
+        ret = self.data_generate_single(category, data_path)
         if platform.system() == 'Windows':
             file_name = tf_path + '\\' + category + '.tfrec'
         elif platform.system() == 'Linux':
@@ -300,7 +286,7 @@ class clothes_batch_generater():
         #关键点数量
         is_visible = tf.cast(reshaped_label[:, -1], tf.bool)
         #[k,2] 在原尺寸图像上的坐标
-        coor_yx = tf.stack([reshaped_label[:, 1], reshaped_label[:, 0]], -1)
+        coor_yx = tf.cast(tf.stack([reshaped_label[:, 1], reshaped_label[:, 0]], -1),tf.float32)
         if self.coor_noise:
             coor_yx += tf.truncated_normal(
                 [tf.shape(coor_yx)[0],
@@ -309,7 +295,7 @@ class clothes_batch_generater():
                 stddev=1.5)
             #保证在图像范围内
             coor_yx = tf.maximum(
-                tf.minimum(coor_yx, [height - 1, width - 1]), [0, 0])
+                tf.minimum(coor_yx, tf.cast(tf.stack([height - 1, width - 1]),tf.float32)), [0, 0])
         #TODO:加上数据增强(data augement)
 #加上rotate、flip等，那么对应的坐标点如何计算？
         reshaped_image = tf.image.random_contrast(
@@ -328,13 +314,12 @@ class clothes_batch_generater():
                                  tf.float32) + tf.cast(sub, tf.float32) / 2
             if self.crop_center_noise:
                 old_center += tf.truncated_normal(
-                    [tf.shape(old_center)[0],
-                     tf.shape(old_center)[1]],
+                    [tf.shape(old_center)[0]],
                     mean=0.0,
                     stddev=10)
                 sub = tf.maximum(old_center - tf.cast(min_coor, tf.float32),
-                                 tf.cast(max_coor - old_center,
-                                         tf.float32)) * 2
+                                 tf.cast(max_coor,tf.float32) - old_center,
+                                         ) * 2
 #不能超出图片尺寸
 #sub=tf.maximum(tf.minimum(sub,[height,width]),[0,0])
 
@@ -361,8 +346,8 @@ class clothes_batch_generater():
             width = tf.cast(width, tf.float32)
             #在原图上所占的比例
             boxes = tf.stack([
-                min_coor[0] / height, min_coor[1] / width,
-                max_coor[0] / height, max_coor[1] / width
+                min_coor[0] / (height-1), min_coor[1] / (width-1),
+                max_coor[0] / (height-1), max_coor[1] / (width-1)
             ])
             boxes_ind = tf.range(1)
             #crop并且resize到指定大小
@@ -370,14 +355,14 @@ class clothes_batch_generater():
                 tf.expand_dims(reshaped_image, 0), tf.expand_dims(boxes, 0),
                 boxes_ind, cropped_resized_size)
             cropped_resized_image = tf.squeeze(cropped_resized_image)
-            gt_heatmaps = make_gt_heatmap(
+            gt_heatmaps = make_gaussian_map(
                 coor_yx,
                 (self.cropped_resized_size, self.cropped_resized_size),
                 self.sigma, is_visible)
             #coor=tf.concat([coor_yx,tf.cast(tf.expand_dims(is_visible,-1),tf.int32)],-1)
             cropped_resized_image.set_shape(
                 [self.cropped_resized_size, self.cropped_resized_size, 3])
-            return cropped_resized_image, gt_heatmaps
+            return cropped_resized_image, gt_heatmaps,coor_yx,reshaped_label,shape
         else:  #不crop，直接resize(保证batch中各个的维度一致)
             resized_image = tf.image.resize_bilinear(
                 tf.expand_dims(reshaped_image, 0),
@@ -414,29 +399,35 @@ class clothes_batch_generater():
         channels = tf.cast(parsed_features['channels'], tf.int32)
         shape = tf.stack([height, width, channels])
         #normalize [-.5,.5]TODO：test时需不需要norm?
-        reshaped_image = tf.reshape(tf.cast(image, tf.float32), shape)
+        reshaped_image = tf.reshape(tf.cast(image, tf.float32), shape)/255.0-0.5
+        resized_size=tf.stack([self.cropped_resized_size,self.cropped_resized_size])
+        old_size=tf.stack([height,width])
+        resized_image=tf.image.resize_bilinear(tf.expand_dims(reshaped_image,0),resized_size)
+        resized_image=tf.squeeze(resized_image)
         image_name = parsed_features['image_name']
-        #TODO卷积操作需要知道shape的每一维
-        #reshaped_image.set_shape([])
-        return reshaped_image, image_name
+        return resized_image, image_name,old_size
 
     #使用新的tf.Data API来生成batch
     def dataset_input_new(self, tf_file):
         dataset = tf.data.TFRecordDataset(tf_file)
         if train_para['is_train']:
             dataset = dataset.map(self._parse_function)
-            dataset = dataset.shuffle(2000)
+            dataset = dataset.shuffle(500)
             dataset = dataset.repeat()
         else:
             dataset = dataset.map(self._parse_function2)
-            dataset = dataset.repeat(1)
+            #dataset = dataset.repeat(10)
         dataset = dataset.batch(self.batch_size)
 
         #迭代生成批次数据
         iterator = dataset.make_one_shot_iterator()
-        batched_images, batched_labels = iterator.get_next()
-        #生成的batch中各个的维度必须相同
-        return batched_images, batched_labels
+        if train_para['is_train']:
+            batched_images, batched_labels,coor_yx,rl,shape = iterator.get_next()
+            #生成的batch中各个的维度必须相同c
+            return batched_images, batched_labels,coor_yx,rl,shape
+        else:
+            image,name,shape=iterator.get_next()
+            return image,name,shape
 
 
 #生成二进制文件测试
@@ -452,34 +443,35 @@ for cat in categories:
     tmp = None
 '''
 
-'''
 #从tfrecords中读取测试
-train_para['is_train'] = False
+#train_para['is_train'] = False
+'''
 with tf.Session() as sess:
     #print(len(categories_dict['blouse']))
-    gen = clothes_batch_generater('blouse', 2)
-    if not os.path.exists('D:\\tfrecords_test'):
-        os.mkdir('D:\\tfrecords_test')
-        print('Created tfrecords dir:' + 'D:\\tfrecords_test')
+    gen = clothes_batch_generater('dress', 1)
+    if not os.path.exists(dir_para['tf_dir']):
+        os.mkdir(dir_para['tf_dir'])
+        print('Created tfrecords dir')
         sys.stdout.flush()
-    rec_name = 'blouse.tfrec'
-    for (root, dirs, files) in os.walk('D:\\tfrecords_test'):
+    rec_name = 'dress.tfrec'
+    for (root, dirs, files) in os.walk(dir_para['tf_dir']):
         if rec_name not in files:
             gen.convert_to_tfrecords_single(
-                'blouse',
+                'trousers',
                 'C:\\Users\\oldhen\\Downloads\\tianchi\\fashionAI_key_points_test_a_20180227\\test',
                 'D:\\tfrecords_test')
-    batch = gen.dataset_input_new('D:\\tfrecords_test' + '\\' + rec_name)
+    batch = gen.dataset_input_new(dir_para['tf_dir'] + '\\' + rec_name)
     sess.run(tf.global_variables_initializer())
-    img, name = sess.run(batch)
-    print(name[0].decode())
+    img, lb ,coor,coor2,shape= sess.run(batch)
+    #print(name[0].decode())
     #print(img)
+    print(shape)
     scipy.misc.imsave('test1.png', img[0])
     scipy.misc.imsave('test2.png', img[1])
     lb_resized=tf.squeeze(tf.image.resize_bilinear(tf.expand_dims(lb[0],0),[256,256]))
     lb_resized=sess.run(lb_resized)
-    scipy.misc.imsave('hp01.png', lb_resized[:,:,0])
-    scipy.misc.imsave('hp02.png', lb_resized[:,:,1])
+    scipy.misc.imsave('hp03.png', lb_resized[:,:,2])
+    scipy.misc.imsave('hp04.png', lb_resized[:,:,3])
     #最大的值
     max_val=tf.reduce_max(lb[0],0)
     max_val=tf.reduce_max(max_val,0)
@@ -487,10 +479,16 @@ with tf.Session() as sess:
 
     #最大值的位置
     max_idx_list=[]
-    for i in range(lb_resized.shape[-1]):
+    true_list=[]
+    true_list2=[]
+    for i in range(lb_resized.shape[-1]-1):
         ind=np.unravel_index(np.argmax(lb_resized[:,:,i]),lb_resized.shape[:2])
         max_idx_list.append(ind)
+        true_list.append(coor[0,i,:])
+        true_list2.append(coor2[0,i,:])
     print(max_idx_list)
+    print(true_list)
+    print(true_list2)
 
-    print(coor[0])
-    '''
+'''
+   

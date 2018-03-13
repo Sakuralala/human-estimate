@@ -37,10 +37,11 @@ def conv_block(input,
                do_normalization=True,
                do_RELU=True):
     with tf.variable_scope(name):
+        #print(tf.shape(input))
         weights = _variable_with_weight_decay(name, [
             kernel_size, kernel_size,
             input.get_shape()[-1], kernel_number
-        ], layer_para['weight_stddev'], layer_para['weight_decay'])
+        ])
         conv = tf.nn.conv2d(
             input,
             weights, [1, stride, stride, 1],
@@ -83,13 +84,14 @@ def batch_normalization(input,
 
 
 # tf.get_variable的封装
-def _variable_with_weight_decay(name, shape, stddev, wd):
+def _variable_with_weight_decay(name, shape, uniform=False):
     return tf.get_variable(
         name,
         shape,
-        initializer=tf.truncated_normal_initializer(stddev=stddev),
+        #改成这个初始化方式
+        initializer=tf.contrib.layers.xavier_initializer(uniform))
         #TODO  正则化的问题
-        regularizer=tf.contrib.layers.l1_regularizer(wd))
+        #regularizer=tf.contrib.layers.l1_regularizer(wd))
 
 
 def max_pool(input, kernel_size=3, stride=2, name='max_pool'):

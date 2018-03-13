@@ -215,3 +215,11 @@ sess.run()之后，再使用xx.decode()来解码为字符串。
     c.set_shape()、reshape()的区别。set_shape更新tensor的static shape，不改变dynamic shape。reshape创建一个具备不同dynamic shape的新的tensor。
 
 6、gpu并行化使用，模型并行如何设置。
+
+2018.03.11
+1、将loss的更新放在cpu上以降低显存使用？
+2、tf.estimator 
+3、logging device placement,sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))。这样会输出op和tensor放置的位置。
+
+2018.03.13
+1、制作heatmap时sigma(标准差)是个影响很大的参数，太大的话难以拟合，太小的话容易过拟合。。。

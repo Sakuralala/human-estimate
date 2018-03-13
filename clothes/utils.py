@@ -92,24 +92,24 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
                 keypoint_coordinates[:, 0], dtype=tf.float32)
             cond_val = tf.greater(cond_val, 0.5)
 
-        # 在map_size width范围内的坐标
-        cond_1_in = tf.logical_and(
-            tf.less(keypoint_coordinates[:, 0], map_size[1] - 1),
-            tf.greater(keypoint_coordinates[:, 0], 0))
         # 在map_size height范围内的坐标
+        cond_1_in = tf.logical_and(
+            tf.less(keypoint_coordinates[:, 0], map_size[0]),
+            tf.greater(keypoint_coordinates[:, 0], -1))
+        # 在map_size width范围内的坐标
         cond_2_in = tf.logical_and(
-            tf.less(keypoint_coordinates[:, 1], map_size[0] - 1),
-            tf.greater(keypoint_coordinates[:, 1], 0))
+            tf.less(keypoint_coordinates[:, 1], map_size[1]),
+            tf.greater(keypoint_coordinates[:, 1], -1))
         cond_in = tf.logical_and(cond_1_in, cond_2_in)
         #即 可见又在crop_image范围内的坐标
         cond = tf.logical_and(cond_val, cond_in)
 
         keypoint_coordinates = tf.cast(keypoint_coordinates, tf.float32)
         keypoint_number = keypoint_coordinates.get_shape().as_list()[0]
-        Y = tf.reshape(
+        X = tf.reshape(
             tf.tile(tf.range(map_size[1]), [map_size[0]]),
             [map_size[1], map_size[0]])
-        X = tf.transpose(Y)
+        Y = tf.transpose(X)
         #[256,256,21]
         X = tf.tile(tf.expand_dims(X, -1), [1, 1, keypoint_number])
         Y = tf.tile(tf.expand_dims(Y, -1), [1, 1, keypoint_number])
@@ -124,11 +124,12 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
         background_gaussian_map = tf.expand_dims(
             tf.ones([map_size[0], map_size[1]]), -1)
         #[size,size,1]
-        total = tf.reduce_sum(gaussian_map, -1, keep_dims=True)
-        background_gaussian_map -= total
+        #total = tf.reduce_sum(gaussian_map, -1, keep_dims=True)
+        #background_gaussian_map -= total
         #[256,256,22]
         gaussian_map = tf.concat([gaussian_map, background_gaussian_map], -1)
-
+        gaussian_map=tf.image.resize_bilinear(tf.expand_dims(gaussian_map,0),[map_size[0]//4,map_size[1]//4])
+        gaussian_map=tf.squeeze(gaussian_map)
         return gaussian_map
 
 
@@ -162,8 +163,8 @@ def kpt_coor_translate(coor,scale,old_center,new_center):
     #new_coor_relative=tf.cast((coor_relative+0.5)*scale-0.5,tf.int32)
     new_coor_relative=(coor_relative+0.5)*scale-0.5
     new_coor=new_coor_relative+new_center
-    new_size=new_center*2+1
-    new_coor_x=tf.minimum(tf.maximum(new_coor[:,1],0.0),new_size[1])
+    new_size=(new_center+1)*2
+    new_coor_x=tf.minimum(tf.maximum(new_coor[:,1],0),new_size[1])
     new_coor_y=tf.minimum(tf.maximum(new_coor[:,0],0),new_size[0])
     #print(new_coor_y.shape)
     new_coor=tf.stack([new_coor_y,new_coor_x],-1)    

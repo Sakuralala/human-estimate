@@ -24,11 +24,11 @@ class HourglassModel():
         self.number_classes = number_classes
         self.output = []
         self.loss = []
-        self.input = None
+        #self.input = None
 
     def build_model(self, input):
         with tf.variable_scope('hourglass_model'):
-            conv1 = conv_block(self.input, 7, 2, 64, 'conv1')
+            conv1 = conv_block(input, 7, 2, 64, 'conv1')
             res1 = residual_block(conv1, 1, 64, 128, 'res1')
             pool = max_pool(res1, 2, 2)
             res2 = residual_block(pool, 1, self.output_features // 2,
@@ -53,28 +53,32 @@ class HourglassModel():
                         do_normalization=False,
                         do_RELU=False)
                     self.output.append(inter_output)
-                    height = inter_output.get_shape()[1]
-                    width = inter_output.get_shape()[2]
+                    #height = inter_output.get_shape()[1]
+                    #width = inter_output.get_shape()[2]
                     if i != self.stack_number - 1:
                         conv3 = conv_block(
                             conv2,
                             1,
                             1,
-                            256,
+                            self.output_features,
                             'conv2',
+                            do_normalization=False,
+                            do_RELU=False
                         )
                         conv4 = conv_block(inter_output, 1, 1,
-                                           self.output_features, 'conv3')
+                                           self.output_features, 'conv3',do_normalization=False,do_RELU=False)
                         inter_total = tf.add_n([inter_total, conv3, conv4])
-
+                        inter_total= batch_normalization(inter_total,layer_para['bn_decay'] ,
+                                    layer_para['bn_epsilon'],name='batch_normalized_inter_total')
+                        inter_total=tf.nn.relu(inter_total,'activated_inter_total')
+        return self.output
     #计算损失
     def loss_calculate(self, gt_heatmaps):
-        batch_size = tf.shape(self.output[0])[0]
+        #batch_size = tf.shape(self.output[0])[0]
         with tf.variable_scope('Loss'):
-            for i in self.output:
-                loss = tf.nn.l2_loss(i - gt_heatmaps,
-                                     'inter_loss' + str(i + 1)) / tf.cast(
-                                         batch_size, tf.float32)
+            for i,output in enumerate(self.output):
+                loss = tf.nn.l2_loss(output - gt_heatmaps,
+                                     'inter_loss' + str(i + 1)) /train_para['batch_size'] 
                 self.loss.append(loss)
                 tf.summary.scalar(loss.op.name, loss)
             total_loss = tf.add_n(self.loss, 'Total_loss')
@@ -127,14 +131,15 @@ class HourglassModel():
             down = residual_block(down, 1, self.output_features // 2,
                                   self.output_features)
             if stage > 1:
-                ret = self.hourglass(down, stage - 1)
+                ret = self.hourglass2(down, stage - 1)
             else:
                 ret = residual_block(down, 1, self.output_features // 2,
                                      self.output_features, 'inest_res')
             ret = residual_block(ret, 1, self.output_features // 2,
                                  self.output_features, 'res3')
-            height = ret.get_shape().as_list()[1]
-            width = ret.get_shape().as_list()[2]
+            height = tf.shape(ret)[1]
+            width = tf.shape(ret)[2]
+            #坑爹 这里*2回去可能会比up尺寸大  比如up是13那么maxpool再resize就变成了14.。。草
             ret = tf.image.resize_bilinear(ret, [height * 2, width * 2])
             total = ret + up
 

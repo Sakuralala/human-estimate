@@ -1,5 +1,7 @@
 #使用hourglass结构来进行关节点预测
 import tensorflow as tf
+import scipy
+import numpy as np
 import os
 import sys
 import argparse  #用以解析运行时的参数
@@ -9,7 +11,10 @@ from params_clothes import *
 
 
 def train(category):
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
+    #限制使用一个gpu
+    os.environ["CUDA_VISIBLE_DEVICES"]='0'
+    gpu_options = tf.GPUOptions(allow_growth=True)
+    config=tf.ConfigProto(allow_soft_placement=True,gpu_options=gpu_options)
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
     # 训练好的模型参数
         if not os.path.exists(dir_para['trained_model_dir']):
@@ -29,12 +34,13 @@ def train(category):
 	# Start TF
         tf.train.start_queue_runners(sess=sess)
         #为了之后test能够喂进不同的数据
-        x=tf.placeholder(tf.float32,name='input')
+        x=tf.placeholder(tf.float32,shape=[None,None,None,3],name='input')
+        #print(tf.shape(x)[-1])
         #y=tf.placeholder(tf.float32,name='gt')
         #Model
         model = HourglassModel(1+len(categories_dict[category]))
         #构建网络
-        model.build_model(x)
+        output=model.build_model(x)
         #loss计算
         loss=model.loss_calculate(batch[1])
         #全局步数
@@ -56,7 +62,8 @@ def train(category):
         writer = tf.summary.FileWriter(dir_para['log_dir'], sess.graph)
         #saver
         saver = tf.train.Saver(
-            max_to_keep=1, keep_checkpoint_every_n_hours=4.0)
+            max_to_keep=0, keep_checkpoint_every_n_hours=4.0)
+        '''
         ckpt = tf.train.get_checkpoint_state(dir_para['trained_model_dir'])
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(sess, ckpt.model_checkpoint_path)
@@ -65,14 +72,19 @@ def train(category):
             print('No checkpoint file found.')
             # init weights
             sess.run(tf.global_variables_initializer())
+        '''
+        sess.run(tf.global_variables_initializer())
         step = sess.run(global_step)
         # Training loop
         while step < train_para['max_iter']:
-            _, loss_v, summ, step = sess.run(
-                [train_op, loss, merged_op, global_step],feed_dict={x:batch[0]})
+            image_batch=sess.run(batch[0])
+            _, loss_v,output_v, summ, step = sess.run(
+                [train_op, loss, output[7],merged_op, global_step],feed_dict={x:image_batch})
             writer.add_summary(summ, step)
-            #if (i % train_para['show_loss_freq']) == 0:
-            print('Iteration %d\t Loss %.3e' % (step, loss_v))
+            if (step % train_para['show_loss_freq']) == 0:
+                print('Iteration %d\t Loss %.3e' % (step, loss_v))
+                for i in range(output_v.shape[-1]-1):
+                        scipy.misc.imsave('prexx%d.png'%i,output_v[0,:,:,i])
             if (step % train_para['show_lr_freq']) == 0:
                 print('Current lr:', sess.run(lr))
             sys.stdout.flush()
@@ -85,22 +97,28 @@ def train(category):
                 print('Saved a trained_model.')
                 sys.stdout.flush()
 
-        print('Training finished. Saving final trained_model.')
+        print('Training %s finished. Saving final trained_model.'%category)
         saver.save(
             sess,
             "%s/%s" % (dir_para['trained_model_dir'], category),
             global_step=train_para['max_iter'])
+        #清除图中节点
+    tf.reset_default_graph()
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    #parser = argparse.ArgumentParser()
     #后面必须跟一个服装类别的参数
-    parser.add_argument('category', type=str, choices=categories)
+    #parser.add_argument('category', type=str, choices=categories)
     #返回Namespace对象
-    args = parser.parse_args()
+    #args = parser.parse_args()
     #print(args.category)
     #一次只能训练一个类别
-    train(args.category)
+    #train(args.category)
+
+    for cat in categories:
+        print('Start to train %s.'%cat)
+        train(cat)
 
 
 if __name__ == '__main__':

@@ -45,10 +45,11 @@ categories_dict = {
     'skirt': skirt_kpt_list,
     'outwear': outwear_kpt_list,
     'trousers': trousers_kpt_list,
-    'dress':dress_kpt_list 
+    'dress':dress_kpt_list,
+    'full':all_kpt_list
 }
 
-categories = {'blouse', 'skirt', 'outwear', 'trousers', 'dress'}
+categories = ['dress','full']
 #input
 input_para = {
     'height': 512,
@@ -60,24 +61,23 @@ input_para = {
 
 #layers
 layer_para = {
-    'weight_decay': 0.00004,
+    'weight_decay': 0.0,
     #'weight_decay_rate': 0.1,
-    'weight_stddev': 0.1,
+    'weight_stddev': 1.0,
     'bn_decay': 0.99,
-    'bn_epsilon': 10e-4,
+    'bn_epsilon': 1e-4,
 }
 
 #train
 train_para = {
-    'batch_size': 8,
-    'max_iter': 100000,
-    'save_freq':5000,
+    'batch_size': 4,
+    'max_iter': 50000,
+    'save_freq':10000,
     'show_lr_freq': 500,
     'show_loss_freq': 50,
-    'snapshot_freq': 5000,
     'lr_decay_steps': 30000,
-    'lr_decay_rate': 0.1,
-    'init_lr': 2.5e-4,
+    'lr_decay_rate': 0.5,
+    'init_lr': 2.5e-3,
     'is_train': True,
 }
 
@@ -85,17 +85,17 @@ train_para = {
 dir_para = {
     #TODO
     'trained_model_dir':
-    '/home/b3336/singlehandpose/clothes/trained_model/',
+    './trained_model',
     'log_dir':
-    '/home/b3336/singlehandpose/clothes/log/',
+    './log/',
     'tf_dir':
-    '/home/b3336/singlehandpose/clothes/tfrec/',
+    './tfrec/',
     'tf_dir_test':
-    '/home/b3336/singlehandpose/clothes/tfrec_test/',
+    './tfrec_test/',
     'train_data_dir':
-    '/home/b3336/singlehandpose/clothes/train/',
+    'D:\\clothes\\tianchi\\fashionAI_key_points_train_20180227\\train',
     'test_data_dir':
-    ''
+    'D:\\clothes\\tianchi\\fashionAI_key_points_test_a_20180227\\test'
 }
 
-thred=10e-12
+thred=1e-5

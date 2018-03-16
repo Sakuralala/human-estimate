@@ -223,3 +223,8 @@ sess.run()之后，再使用xx.decode()来解码为字符串。
 
 2018.03.13
 1、制作heatmap时sigma(标准差)是个影响很大的参数，太大的话难以拟合，太小的话容易过拟合。。。
+
+
+2018.03.14
+1、生成gt_heatmap时如果resize的话那么峰值也会相应地变小，容易直接拟合为0？？？
+尝试不resize gt_heatmap而是resize输出，这样gt_heatmap的峰值就不会变小了。

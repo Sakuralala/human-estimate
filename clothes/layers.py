@@ -5,6 +5,102 @@ import numpy as np
 import os
 from params_clothes import *
 
+#hourglass中的残差模块的identity mapping 的升级优化版
+#m为一超参数，c为每个prm中的level数
+def PRMA_block(input,out_channels,use_conv=False,m=1,c=4,name='PRMA_block'):
+    with tf.variable_scope(name):
+        f_list=[]
+        height=tf.shape(input)[1]
+        width=tf.shape(input)[2]
+        #f0
+        for i in range(0,c+1):
+            bn1=tf.contrib.layers.batch_norm(input,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+            conv1=tf.contrib.layers.conv2d(bn1,out_channels//2,1,activation_fn=None)
+            ratio=2.0**(m*i/c)
+            if ratio>1.0:
+                conv1=tf.nn.fractional_max_pool(conv1,[1.0,ratio,ratio,1.0])
+            bn2=tf.contrib.layers.batch_norm(conv1,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+            conv2=tf.contrib.layers.conv2d(bn2,out_channels//2,3,activation_fn=None)
+            if ratio>1.0:
+                conv2=tf.image.resize_bilinear(conv2,[height,width])
+            f_list.append(conv2)
+
+        bn3=tf.contrib.layers.batch_norm(f_list[0],epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        f0=tf.contrib.layers.conv2d(bn3,out_channels,1,activation_fn=None)
+        fi=tf.add_n([f_list[i] for i in range(1,c+1)],'fi_total')     
+        fi=tf.contrib.layers.batch_norm(fi,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        fi=tf.contrib.layers.conv2d(fi,out_channels,1,activation_fn=None)
+        fi+=f0
+        #identify mapping  
+        if use_conv or tf.shape(input)[-1]!=out_channels:
+            trans=tf.contrib.layers.conv2d(input,out_channels,1)
+            output=tf.add(fi,trans,'output')
+        else:
+            output=tf.add(fi,input,'output')
+
+        return output
+
+
+#use_conv  用以控制残差模块的输出方差
+def PRMB_block(input,out_channels,use_conv=False,name='PRMB_block',m=1,c=4):
+    with tf.variable_scope(name):
+        f_list=[]
+        height=tf.shape(input)[1]
+        width=tf.shape(input)[2]
+        #f0 权重不和fc共享
+        f0=tf.contrib.layers.batch_norm(input,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        f0=tf.contrib.layers.conv2d(f0,out_channels//2,1,activation_fn=None)
+        f0=tf.contrib.layers.batch_norm(f0,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        f0=tf.contrib.layers.conv2d(f0,out_channels//2,3,activation_fn=None)
+        f0=tf.contrib.layers.batch_norm(f0,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        f0=tf.contrib.layers.conv2d(f0,out_channels,3,activation_fn=None)
+        #fi
+        bn1=tf.contrib.layers.batch_norm(input,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        conv1=tf.contrib.layers.conv2d(bn1,out_channels//2,1,activation_fn=None)
+        for i in range(1,c+1):
+            ratio=float(2.0**(m*i/c))
+            #print(ratio)
+            pool,row_pooling_seq,col_pooling_seq=tf.nn.fractional_max_pool(conv1,[1.0,ratio,ratio,1.0])
+            bn2=tf.contrib.layers.batch_norm(pool,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+            with tf.variable_scope('sharing_weights',reuse=tf.AUTO_REUSE):
+               #conv2=tf.contrib.layers.conv2d(bn2,out_channels//2,3,activation_fn=None)
+               conv2=conv_block(bn2,3,1,out_channels//2,do_normalization=False,do_RELU=False)
+            resized=tf.image.resize_bilinear(conv2,[height,width])
+            f_list.append(resized)
+
+        fi=tf.add_n(f_list,'fi_total')     
+        fi=tf.contrib.layers.batch_norm(fi,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        fi=tf.contrib.layers.conv2d(fi,out_channels,1,activation_fn=None)
+        fi+=f0
+        #identify mapping  
+        if use_conv or tf.shape(input)[-1]!=out_channels:
+            trans=tf.contrib.layers.conv2d(input,out_channels,1)
+            output=tf.add(fi,trans,'output')
+        else:
+            output=tf.add(fi,input,'output')
+
+        return output
+
+def residual_block2(input,out_channels,name='residual_block'):
+    with tf.variable_scope(name):
+        bn1=tf.contrib.layers.batch_norm(input,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        conv1=tf.contrib.layers.conv2d(bn1,out_channels//2,1,activation_fn=None)
+        #conv1=conv_block(bn1,1,1,out_channels//2,'conv1',do_normalization=False,do_RELU=False)
+        bn2=tf.contrib.layers.batch_norm(conv1,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        conv2=tf.contrib.layers.conv2d(bn2,out_channels//2,3,activation_fn=None)
+        #conv2=conv_block(bn2,1,3,out_channels//2,'conv2',do_normalization=False,do_RELU=False)
+        bn3=tf.contrib.layers.batch_norm(conv2,epsilon=1e-5,decay=layer_para['bn_decay'],activation_fn=tf.nn.relu)
+        #conv3=conv_block(conv2,1,1,out_channels,'conv3',do_normalization=False,do_RELU=False)
+        conv3=tf.contrib.layers.conv2d(bn3,out_channels,1,activation_fn=None)
+        if tf.shape(input)[-1]==out_channels:
+            output=tf.add(conv3,input,'output')
+        else:
+            trans=tf.contrib.layers.conv2d(input,out_channels,1)
+            output=tf.add(conv3,trans,'output')
+        return output
+
+
+
 
 def residual_block(input,
                    stride,
@@ -47,10 +143,12 @@ def conv_block(input,
             weights, [1, stride, stride, 1],
             padding=padding,
             name='conv')
-        bias = tf.Variable(tf.zeros([kernel_number]), name='bias')
-        output = tf.nn.bias_add(conv, bias, name='output')
+        #bias = tf.Variable(tf.zeros([kernel_number]), name='bias')
+        #output = tf.nn.bias_add(conv, bias, name='output')
+        output=tf.contrib.layers.bias_add(conv)
         if do_normalization:
-            output = batch_normalization(output,layer_para['bn_decay'] ,layer_para['bn_epsilon'],name='batch_normalized_output')
+            #output = batch_normalization(output,layer_para['bn_decay'] ,layer_para['bn_epsilon'],name='batch_normalized_output')
+            output=tf.contrib.layers.batch_norm(output,epsilon=1e-5,decay=layer_para['bn_decay'])
         if do_RELU:
             output = tf.nn.relu(output, name='activated_output')
         return output

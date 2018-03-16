@@ -179,7 +179,7 @@ class clothes_batch_generater():
             data_path:数据的路径
             tf_path:生成的tfrec文件的存放路径
         '''
-        print("Start coverting to tfrecord.")
+        print("Start coverting  %s to tfrecord."%category)
         sys.stdout.flush()
         if category == None:
             raise ValueError("Please give an correct category.")
@@ -332,13 +332,19 @@ class clothes_batch_generater():
 #scale必须是浮点数
             cropped_resized_size = tf.stack(
                 [self.cropped_resized_size, self.cropped_resized_size])
-            scale = tf.cast(cropped_resized_size, tf.float32) / tf.cast(
+            scale = tf.cast(cropped_resized_size//4, tf.float32) / tf.cast(
                 sub, tf.float32)
             #tf.Print(scale,[scale],'scale:')
             #经过resize后新的关键点坐标
+            '''
             coor_yx = kpt_coor_translate(
                 tf.cast(coor_yx, tf.float32), scale, old_center,
                 tf.cast(cropped_resized_size, tf.float32) / 2 - 1)
+            '''
+            #对于heatmap大小的坐标
+            coor_yx_hp = kpt_coor_translate(
+                tf.cast(coor_yx, tf.float32), scale, old_center,
+                tf.cast(cropped_resized_size//4, tf.float32) / 2 - 1)
             #coor_yx=tf.cast(tf.cast(coor_yx,tf.float32)*scale,tf.int32)
             min_coor = tf.cast(min_coor, tf.float32)
             max_coor = tf.cast(max_coor, tf.float32)
@@ -356,13 +362,13 @@ class clothes_batch_generater():
                 boxes_ind, cropped_resized_size)
             cropped_resized_image = tf.squeeze(cropped_resized_image)
             gt_heatmaps = make_gaussian_map(
-                coor_yx,
-                (self.cropped_resized_size, self.cropped_resized_size),
+                coor_yx_hp,
+                (self.cropped_resized_size//4, self.cropped_resized_size//4),
                 self.sigma, is_visible)
             #coor=tf.concat([coor_yx,tf.cast(tf.expand_dims(is_visible,-1),tf.int32)],-1)
             cropped_resized_image.set_shape(
                 [self.cropped_resized_size, self.cropped_resized_size, 3])
-            return cropped_resized_image, gt_heatmaps,coor_yx,reshaped_label,shape
+            return cropped_resized_image, gt_heatmaps,coor_yx_hp,reshaped_label,shape
         else:  #不crop，直接resize(保证batch中各个的维度一致)
             resized_image = tf.image.resize_bilinear(
                 tf.expand_dims(reshaped_image, 0),
@@ -376,7 +382,7 @@ class clothes_batch_generater():
             ])
             coor_yx = kpt_coor_translate(coor_yx, scale, old_center,
                                          new_center)
-            gt_heatmaps = make_gt_heatmap(
+            gt_heatmaps = make_gaussian_map(
                 coor_yx, (input_para['height'], input_para['width']),
                 self.sigma, is_visible)
             resized_image.set_shape(
@@ -412,7 +418,7 @@ class clothes_batch_generater():
         dataset = tf.data.TFRecordDataset(tf_file)
         if train_para['is_train']:
             dataset = dataset.map(self._parse_function)
-            dataset = dataset.shuffle(500)
+            dataset = dataset.shuffle(2000)
             dataset = dataset.repeat()
         else:
             dataset = dataset.map(self._parse_function2)
@@ -442,18 +448,17 @@ for cat in categories:
     #for gc
     tmp = None
 '''
-
+'''
 #从tfrecords中读取测试
 #train_para['is_train'] = False
-'''
 with tf.Session() as sess:
     #print(len(categories_dict['blouse']))
-    gen = clothes_batch_generater('dress', 1)
+    gen = clothes_batch_generater('full', 2)
     if not os.path.exists(dir_para['tf_dir']):
         os.mkdir(dir_para['tf_dir'])
         print('Created tfrecords dir')
         sys.stdout.flush()
-    rec_name = 'dress.tfrec'
+    rec_name = 'full.tfrec'
     for (root, dirs, files) in os.walk(dir_para['tf_dir']):
         if rec_name not in files:
             gen.convert_to_tfrecords_single(
@@ -468,15 +473,20 @@ with tf.Session() as sess:
     print(shape)
     scipy.misc.imsave('test1.png', img[0])
     scipy.misc.imsave('test2.png', img[1])
-    lb_resized=tf.squeeze(tf.image.resize_bilinear(tf.expand_dims(lb[0],0),[256,256]))
-    lb_resized=sess.run(lb_resized)
-    scipy.misc.imsave('hp03.png', lb_resized[:,:,2])
-    scipy.misc.imsave('hp04.png', lb_resized[:,:,3])
-    #最大的值
-    max_val=tf.reduce_max(lb[0],0)
-    max_val=tf.reduce_max(max_val,0)
-    print(sess.run(max_val))
-
+    #lb_resized=tf.squeeze(tf.image.resize_bilinear(tf.expand_dims(lb[0],0),[256,256]))
+    #lb_resized=sess.run(lb_resized)
+    lb_resized=lb[0]
+    for i in range(lb_resized.shape[-1]):
+        scipy.misc.imsave('hp%s.png'%i, lb_resized[:,:,i])
+        #print(lb_resized[:,1,i])
+        print('%s'%i,np.max(lb_resized[:,:,i]))
+#pre=np.asarray(Image.open('prexx0.png','r'),np.uint8)
+#最大的值
+#max_val=np.max(pre)
+#max_val=tf.reduce_max(max_val)
+#print(sess.run(max_val))
+#print(max_val)
+#print(pre)
     #最大值的位置
     max_idx_list=[]
     true_list=[]
@@ -489,6 +499,4 @@ with tf.Session() as sess:
     print(max_idx_list)
     print(true_list)
     print(true_list2)
-
 '''
-   

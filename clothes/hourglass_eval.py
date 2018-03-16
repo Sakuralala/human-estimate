@@ -52,13 +52,12 @@ def test(category):
         x = graph.get_tensor_by_name('input:0')
         #print(x)
         opt = graph.get_tensor_by_name(
-            'hourglass_model/hourglass8/inter_output/output:0')
+            'hourglass_model/hourglass4/inter_output/output:0')
         #用以保存图片名及对应坐标
         max_idx_dict={}
         i=0
         while True:
             try:
-                i+=1
                 #最终输出的heatmap 缩小了四倍的
                 img,img_name,size=sess.run(batch)
                 predicted_heatmaps = sess.run(opt, feed_dict={x: img})

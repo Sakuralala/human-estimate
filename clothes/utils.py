@@ -65,10 +65,12 @@ def make_gt_heatmap(keypoint_coordinates, map_size, sigma, valid_vec):
         background = tf.expand_dims(tf.zeros([map_size[0], map_size[1]]), -1)
         #[map_size[0],map_size[1],NUM_OF_HEAMAPS]
         gt_heatmap_all_jt = tf.concat([gt_heatmap_all_jt, background], -1)
-        gt_heatmap_all_jt = tf.image.resize_bilinear(
-            tf.expand_dims(gt_heatmap_all_jt, 0),
-            [map_size[0] // 4, map_size[1] // 4])
-        gt_heatmap_all_jt=tf.squeeze(gt_heatmap_all_jt)
+        #gt_heatmap_all_jt = tf.image.resize_bilinear(
+        #    tf.expand_dims(gt_heatmap_all_jt, 0),
+        #    [map_size[0] // 4, map_size[1] // 4])
+        #gt_heatmap_all_jt=tf.squeeze(gt_heatmap_all_jt)
+        #峰值太小极可能出现输出全为零的情况。。
+        #峰值太大难以拟合。。。。
         return gt_heatmap_all_jt
 
 
@@ -119,17 +121,18 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
         #每个gaussian_map上仅坐标等于关节点坐标的位置distance为0，强度最大，其他位置按照正态分布递减
         distance = tf.square(X_relative) + tf.square(Y_relative)
         gaussian_map = tf.exp(-distance / sigma) * tf.cast(cond, tf.float32)
+        gaussian_map=tf.maximum(gaussian_map,1e-18)
         #背景 [256,256,1]
         #background_gaussian_map=tf.expand_dims(tf.zeros([map_size[0],map_size[1]]),-1)
         background_gaussian_map = tf.expand_dims(
-            tf.ones([map_size[0], map_size[1]]), -1)
+            tf.zeros([map_size[0], map_size[1]]), -1)
         #[size,size,1]
         #total = tf.reduce_sum(gaussian_map, -1, keep_dims=True)
         #background_gaussian_map -= total
         #[256,256,22]
         gaussian_map = tf.concat([gaussian_map, background_gaussian_map], -1)
-        gaussian_map=tf.image.resize_bilinear(tf.expand_dims(gaussian_map,0),[map_size[0]//4,map_size[1]//4])
-        gaussian_map=tf.squeeze(gaussian_map)
+        #gaussian_map=tf.image.resize_bilinear(tf.expand_dims(gaussian_map,0),[map_size[0]//4,map_size[1]//4])
+        #gaussian_map=tf.squeeze(gaussian_map)
         return gaussian_map
 
 

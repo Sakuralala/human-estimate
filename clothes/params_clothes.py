@@ -49,7 +49,7 @@ categories_dict = {
     'full':all_kpt_list
 }
 
-categories = ['dress','full']
+categories = ['blouse','skirt','outwear','trousers','dress','full']
 #input
 input_para = {
     'height': 512,
@@ -70,14 +70,14 @@ layer_para = {
 
 #train
 train_para = {
-    'batch_size': 4,
-    'max_iter': 50000,
+    'batch_size': 8,
+    'max_iter': 200000,
     'save_freq':10000,
     'show_lr_freq': 500,
     'show_loss_freq': 50,
-    'lr_decay_steps': 30000,
+    'lr_decay_steps': 50000,
     'lr_decay_rate': 0.5,
-    'init_lr': 2.5e-3,
+    'init_lr': 1e-3,
     'is_train': True,
 }
 

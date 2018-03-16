@@ -35,8 +35,6 @@ def train(category):
         tf.train.start_queue_runners(sess=sess)
         #为了之后test能够喂进不同的数据
         x=tf.placeholder(tf.float32,shape=[None,None,None,3],name='input')
-        #print(tf.shape(x)[-1])
-        #y=tf.placeholder(tf.float32,name='gt')
         #Model
         model = HourglassModel(1+len(categories_dict[category]))
         #构建网络
@@ -51,11 +49,11 @@ def train(category):
             global_step,
             decay_steps=train_para['lr_decay_steps'],
             decay_rate=train_para['lr_decay_rate'])
-        #opt = tf.train.AdamOptimizer(lr, 0.9, 0.999)
-        opt = tf.train.RMSPropOptimizer(lr, epsilon=1e-8)
-        #opt=tf.train.AdadeltaOptimizer(lr)
+        #lr=train_para['init_lr']
+        opt = tf.train.AdamOptimizer(lr)
+        #opt = tf.train.RMSPropOptimizer(lr,decay=0.99,epsilon=1e-8)
         train_op = opt.minimize(loss, global_step=global_step)
-        #summary
+        #summar
         merged_op = tf.summary.merge_all()
 
         #writer
@@ -77,17 +75,20 @@ def train(category):
         step = sess.run(global_step)
         # Training loop
         while step < train_para['max_iter']:
-            image_batch=sess.run(batch[0])
-            _, loss_v,output_v, summ, step = sess.run(
-                [train_op, loss, output[7],merged_op, global_step],feed_dict={x:image_batch})
+            image_batch,gt_heatmap_batch=sess.run([batch[0],batch[1]])
+            _, loss_v,output_v3, summ, step = sess.run(
+                [train_op, loss, output[3],merged_op, global_step],feed_dict={x:image_batch})
             writer.add_summary(summ, step)
             if (step % train_para['show_loss_freq']) == 0:
                 print('Iteration %d\t Loss %.3e' % (step, loss_v))
-                for i in range(output_v.shape[-1]-1):
-                        scipy.misc.imsave('prexx%d.png'%i,output_v[0,:,:,i])
+                scipy.misc.imsave('image0.png',image_batch[0,:,:,:])
+                for i in range(output_v3.shape[-1]-1):
+                      #  scipy.misc.imsave('pre_4%d.png'%i,output_v4[0,:,:,i])
+                        scipy.misc.imsave('pre_7%d.png'%i,output_v3[0,:,:,i])
+                        scipy.misc.imsave('gt%d.png'%i,gt_heatmap_batch[0,:,:,i])
             if (step % train_para['show_lr_freq']) == 0:
                 print('Current lr:', sess.run(lr))
-            sys.stdout.flush()
+                sys.stdout.flush()
 
             if (step % train_para['save_freq']) == 0:
                 saver.save(
@@ -103,7 +104,7 @@ def train(category):
             "%s/%s" % (dir_para['trained_model_dir'], category),
             global_step=train_para['max_iter'])
         #清除图中节点
-    tf.reset_default_graph()
+    #tf.reset_default_graph()
 
 
 def main():
@@ -116,9 +117,13 @@ def main():
     #一次只能训练一个类别
     #train(args.category)
 
+    '''
     for cat in categories:
         print('Start to train %s.'%cat)
         train(cat)
+    '''
+    train('skirt')
+    #train('full')
 
 
 if __name__ == '__main__':

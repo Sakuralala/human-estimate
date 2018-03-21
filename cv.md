@@ -284,3 +284,5 @@ tf.contrib.image.transform(
 ),直接把三步合为一步实现了。
 
 5、bn和relu放在conv前/后？
+
+6、tf.nn.l2_loss() tf.losses.mean_squared_error(),后者默认是除了像素平均值的。。。

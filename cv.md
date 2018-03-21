@@ -252,3 +252,35 @@ ex:
     d.shear
     M=[[1,b,0],[d,1,0]]
     note:上述操作可叠加，即各种复杂的变换均可以通过一个矩阵来实现。(各种变换矩阵的乘积)
+    ??如何实现crop操作？？
+
+2018.03.20
+1、np.prod(x) 返回乘积;np.vstack((a,b)),按列stack a和b中的元素。
+    ex:
+    a = np.array([[1], [2], [3]])
+    b = np.array([[2], [3], [4]])
+    np.vstack((a,b))
+    array([[1],
+           [2],
+           [3],
+           [2],
+           [3],
+           [4]])
+
+2、np.resize(a,new_shape);注意当new_shape大于原形状时，会添加元素(copy of a);np.matmul(a,b),矩阵乘积，如果a、b均大于二维，则最后两维用以做矩阵乘积并根据前面的维进行broadcasting。
+
+3、当图像经过仿射变换之后，各个转换后的像素点的位置大概率不在一个像素点的坐标中心(即新的像素点位置可能出现小数的情况),此时就需要进行插值操作。
+    注意，在实际操作过程中仿射变换分三步：
+    a.生成目标坐标点的sampling grid，即根据图片尺寸生成对应的目标图像target坐标grid;
+    b.生成转换矩阵M并与target坐标相乘，得到各个target点在源图像下的坐标source grid；
+    c。利用插值变换计算target各个坐标点的像素值。
+
+4、tensorflow的affine transformation实现：
+tf.contrib.image.transform(
+    images,
+    transforms,
+    interpolation='NEAREST',
+    name=None
+),直接把三步合为一步实现了。
+
+5、bn和relu放在conv前/后？

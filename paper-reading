@@ -1,0 +1,22 @@
+//论文阅读。
+before:有空补。
+
+
+
+
+2018.03.23
+1、cpn(级联金字塔网络)
+用于：关键点检测。
+大体方法：
+a.网络结构。属于top-down类，其中第一步的detector基于fpn(特征金字塔网络)+mask rcnn中的roiAlign,属于直接拿来用的部分，略过不谈；第二步即关键点检测部分，采用的是两个net，
+    其一称为globalnet，用以检测easy points,即容易定位的关键点，整体是个U-shape,类似fpn，原理大概是浅层特征能够较好地定位关键点信息，但是由于感受野较小，难以提供用以识别的语义信息；深层特征由于感受野较大拥有较丰富的语义信息但由于conv和pool的原因分辨率较小难以提供准确的关键点信息；因此使用U-shape结构可以较好地融合这些信息来获得比较好的检测定位效果(说白了就是将各个层的信息相加呗),至于loss的计算，由于是在每个融合特征层进行分别预测，那么尺寸是不一样的，所以对每一层而言heatmap的尺寸也是不同的(应该是进行resize操作了的？);
+    其二称为refinenet，用来检测定位前面globalnet不能很好地预测的关键点hard points，如被遮挡的部分，具体来说就是globalnet中的每层feature经过一定数量的bottleneck(应该就是residual模块，浅层用的少，深层用的多)后再经过upsampling操作，最后不同层的结果进行concat(与hourglass的+不同)。另外，为了让refinenet专注于定位hard points,原文采用了一个称之为hard points online studying的方法，说白了就是设定一个hardpoints的数量m，然后在refinenet反向传播loss的时候只把所有关键点里loss为前m个的传回去(具体实现，个人觉得是把其他的关键点的loss置为0即可)，原文中选的m值为总关键点数量的一半，效果最好。
+b.数据预处理。原文实验表明256*192的效果和256*256的效果一样好，因为人的尺寸一般不是方形的，但更节省内存，可以用于提高batch size;图片尺寸越大，效果越好；rotation、scale等常用手段，以及large batch，这个很重要。
+
+2.fpn(特征金字塔网络)
+用于：理论上可用于任何cnn结构。
+大体方法：
+a.网络结构，和一般的bottom-up不断subsampling并提取高层特征再top-down不断upsampling融合各层特征且只在最后一个upsampling层进行预测不同，fpn在top-down阶段的每一层融合特征后都进行预测，上一层的特征经过upsampling后与subsampling阶段对应channel的特征进行融合然后再进行预测，每层都如此。
+b.数据预处理，未明。
+
+3.associated embeddings:xxxx

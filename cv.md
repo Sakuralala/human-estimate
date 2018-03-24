@@ -285,4 +285,22 @@ tf.contrib.image.transform(
 
 5、bn和relu放在conv前/后？
 
+2018.03.22
+1、cpm、hourglass都要求输入的图像目标在中央位置。
+2、bottom-up方法，不需要预先知道各个人的位置信息(PAF,但是，为什么呢？)；top-down，主要为detector+单人姿态估计。
+相比而言，top-down方法对硬件的要求高，实时性+准确性方面，top-down方法的alphapose超过了bottom-up方法的openpose及mask-rcnn等，但是我决定这个太吃硬件了。
 6、tf.nn.l2_loss() tf.losses.mean_squared_error(),后者默认是除了像素平均值的。。。
+    note:
+        a.mse均方误差损失：tf.reduce_mean(tf.square(pred-gt)) 即对每个样例误差的平方之和求均值。
+        b.l2_loss:tf.sqrt(tf.reduce_sum(tf.square(pred-gt)))
+    作为损失函数时，两者的最终效果会差很多？？ 
+
+2018.03.24
+1、数据特征的标准化，目的是为了把各个范围的特征数据标准化到一个一样的尺度，有利于加快学习的速度和防止学习的扭曲。
+2、batch normalization。
+    起因：每一层输入的数据的均值和方差都不一样，数据的分布也不一样,这样一来就难以有效地进行前向传播和反向传播,例如如果采用tanh激活函数，若输入中的某个值x过大，则易进入tanh函数的饱和区，使得x对应的输出接近1，也就是说输入就算再扩大经过激励后产生的输出也没有什么差别，即神经元对大的数据已经不敏感了,所以需要对输入的数据进行归一化，使得输入经过激励函数的敏感区域，有利于神经网络学习到有效的特征,而在反向传播时,经过每一层的梯度是需要和对应层的参数w相乘的，而由于数据已经经过了标准化，使得不同scale的参数w前面有一个不同的系数，scale大w的系数小,而scale小的w系数大，这样就有效地减小了梯度爆炸或弥散的可能性。
+    具体做法：通过计算一个batch内的均值与方差来进行特征归一化,使得之后的数据均值为0，方差为1。注意，bn应该放在激励之前做,因为对于激励函数而言,输入数据的分布非常重要，batch normalization的目的就是使得输入的分布在激励函数的敏感区域内，这样更有利于激励函数的非线性化操作。
+    具体公式：
+    对于一个小批次中的输入数据x1-xm,可得其均值为x_avg=sum(xi)/m,而方差则为var=sum((xi-x_avg)**2)/m,则经过归一化之后的数据为xi_norm=(xi-x_avg)/sqrt(var+a),易知xi_norm的均值为0，方差为var/(var+a),(不知道为啥需要加个a),最后输出的结果yi=gamma\*xi_norm+beta,其中的gamma和beta是需要网络自己去学习和更新的参数，更通俗的叫法，gamma称为scale，即放缩尺度，beta称为shift，即偏移。
+3、group normalization(组归一化)。
+    起因：batch normalization需要较大的batch size，否则会导致批统计不准确而提高模型的错误率。

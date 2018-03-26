@@ -6,17 +6,37 @@ before:有空补。
 
 2018.03.23
 1、cpn(级联金字塔网络)
-用于：关键点检测。
-大体方法：
-a.网络结构。属于top-down类，其中第一步的detector基于fpn(特征金字塔网络)+mask rcnn中的roiAlign,属于直接拿来用的部分，略过不谈；第二步即关键点检测部分，采用的是两个net，
-    其一称为globalnet，用以检测easy points,即容易定位的关键点，整体是个U-shape,类似fpn，原理大概是浅层特征能够较好地定位关键点信息，但是由于感受野较小，难以提供用以识别的语义信息；深层特征由于感受野较大拥有较丰富的语义信息但由于conv和pool的原因分辨率较小难以提供准确的关键点信息；因此使用U-shape结构可以较好地融合这些信息来获得比较好的检测定位效果(说白了就是将各个层的信息相加呗),至于loss的计算，由于是在每个融合特征层进行分别预测，那么尺寸是不一样的，所以对每一层而言heatmap的尺寸也是不同的(应该是进行resize操作了的？);
-    其二称为refinenet，用来检测定位前面globalnet不能很好地预测的关键点hard points，如被遮挡的部分，具体来说就是globalnet中的每层feature经过一定数量的bottleneck(应该就是residual模块，浅层用的少，深层用的多)后再经过upsampling操作，最后不同层的结果进行concat(与hourglass的+不同)。另外，为了让refinenet专注于定位hard points,原文采用了一个称之为hard points online studying的方法，说白了就是设定一个hardpoints的数量m，然后在refinenet反向传播loss的时候只把所有关键点里loss为前m个的传回去(具体实现，个人觉得是把其他的关键点的loss置为0即可)，原文中选的m值为总关键点数量的一半，效果最好。
-b.数据预处理。原文实验表明256*192的效果和256*256的效果一样好，因为人的尺寸一般不是方形的，但更节省内存，可以用于提高batch size;图片尺寸越大，效果越好；rotation、scale等常用手段，以及large batch，这个很重要。
+用于:关键点检测。
+大体方法:
+a.网络结构。属于top-down类,其中第一步的detector基于fpn(特征金字塔网络)+mask rcnn中的roiAlign,属于直接拿来用的部分,略过不谈;第二步即关键点检测部分,采用的是两个net,
+    其一称为globalnet,用以检测easy points,即容易定位的关键点,整体是个U-shape,类似fpn,原理大概是浅层特征能够较好地定位关键点信息,但是由于感受野较小,难以提供用以识别的语义信息;深层特征由于感受野较大拥有较丰富的语义信息但由于conv和pool的原因分辨率较小难以提供准确的关键点信息;因此使用U-shape结构可以较好地融合这些信息来获得比较好的检测定位效果(说白了就是将各个层的信息相加呗),至于loss的计算,由于是在每个融合特征层进行分别预测,那么尺寸是不一样的,所以对每一层而言heatmap的尺寸也是不同的(应该是进行resize操作了的？);
+    其二称为refinenet,用来检测定位前面globalnet不能很好地预测的关键点hard points,如被遮挡的部分,具体来说就是globalnet中的每层feature经过一定数量的bottleneck(应该就是residual模块,浅层用的少,深层用的多)后再经过upsampling操作,最后不同层的结果进行concat(与hourglass的+不同)。另外,为了让refinenet专注于定位hard points,原文采用了一个称之为hard points online studying的方法,说白了就是设定一个hardpoints的数量m,然后在refinenet反向传播loss的时候只把所有关键点里loss为前m个的传回去(具体实现,个人觉得是把其他的关键点的loss置为0即可),原文中选的m值为总关键点数量的一半,效果最好。
+b.数据预处理。原文实验表明256*192的效果和256*256的效果一样好,因为人的尺寸一般不是方形的,但更节省内存,可以用于提高batch size;图片尺寸越大,效果越好;rotation、scale等常用手段,以及large batch,这个很重要。
 
 2.fpn(特征金字塔网络)
-用于：理论上可用于任何cnn结构。
-大体方法：
-a.网络结构，和一般的bottom-up不断subsampling并提取高层特征再top-down不断upsampling融合各层特征且只在最后一个upsampling层进行预测不同，fpn在top-down阶段的每一层融合特征后都进行预测，上一层的特征经过upsampling后与subsampling阶段对应channel的特征进行融合然后再进行预测，每层都如此。
-b.数据预处理，未明。
+用于:理论上可用于任何cnn结构。
+大体方法:
+a.网络结构,和一般的bottom-up不断subsampling并提取高层特征再top-down不断upsampling融合各层特征且只在最后一个upsampling层进行预测不同,fpn在top-down阶段的每一层融合特征后都进行预测,上一层的特征经过upsampling后与subsampling阶段对应channel的特征进行融合然后再进行预测,每层都如此。
+b.数据预处理,未明。
 
 3.associated embeddings:xxxx
+用于:多人目标检测和实例分割(好像这块作者做的不是很好暂时不提了)。本文作者从开始就一直在输出一个观点，即许多cv任务都可以看作是两个大的过程:detection+grouping,检测+分组。用在human pose estimation这方面，就是检测各个关键点+将各个关键点分离为独立的个人，本文所设计的两个损失函数也是基于这一观点出发的。(不知道是不是观点输出太强烈了所有被ICCV给rejected了。。。)
+大体方法:
+a.网络结构,大致同之前的hourglass,但是存在以下更改:
+    1、残差模块改为3*3卷积;
+    2、在每个stage进行subsampling时输出的特征图增多(256->386->512->768);
+    3、输出的heatmap变为两种,分别为:
+        detection heatmaps,即检测各个关节点位置的heatmaps,且为多人的(即一个heatmap中可能存在peaks),对应的detection loss即为mse，和之前的相同;
+        tag heatmaps,这个比较有意思，有点类似半监督的方式？(不太懂),即让网络自己去学习对各个不同的人的不同关节点进行编码,使得同个人的各个关节点的编码值应该是一样的，而不同的人之间关节点的编码值应该是区别较大的，这就引出了作者设计的group loss,主要分为两部分:
+            第一部分是针对单人内部各个关键点而言的，本质上就是计算方差，即先根据gt位置找到tag heatmaps中的各个值，然后先算出所有关键点的值的均值，接着计算方差，然后对图中的所有人进行相同的操作并对结果取均值即构成了group loss的第一部分；
+            第二部分是针对不同人之间而言的，计算出每个人各个关键点的均值之后，所有人两两之间的均值的差平方后再取负并作为exp的指数，易知这一项应该越小越好，即不同个体间的编码值差距越大越好。
+        两部分相加即构成了所谓的group loss。
+        根据两个损失的定义可以看到，其实detection和group在训练时是没有什么交集的(loss之间可能存在相互制约？这方面没细想),训练时group操作使用的关键点坐标是ground truth的而不是predicted(说不定可以在这个地方做下文章？),而且从后文的实验结果可以看出，作者在一部分测试集上也使用了ground truth 的坐标而不是predicted的坐标来进行实验，结果提升非常大，这也从侧面说明了限制最终结果的瓶颈在于关键点的detection，且从实验结果放出的图可以看出，tag heatmaps对不同的人的关键点的分割已经十分准确(对于单个人的各个关节点而言，tag的value基本上在一个数值上；对于不同人之间的关键点而言，数值基本上差距十分明显)。另外，在具体实现过程中作者在group loss之前加了一个系数1e-3。
+b.具体实现细节:
+    1、测试时如何将各个关键点分发到相应的个人？
+        采用的方法是迭代并从躯干、头部再到四肢，根据躯干关键点对应的detection heatmap通过nms(非最大值抑制，说白了就是通过设置一个threshold找到各个peaks,感觉这个阈值的设置还是挺重要的，设置小了会导致判别人数多了，设置大了可能导致判别人数比实际的少)来确定人数，并找到对应tag heatmap中peak位置对应的值，这样就形成了初始的状态，然后开始迭代过程：根据各个关键点的detection heatmaps找到对应peak位置tag heatmaps的值，并根据其peak的值的大小及对应tag的值的大小共同判断是否属于现有人物中的某个的关键点(具体来说还是设置一个阈值),若对于现有的所有人都不match，则新增一个人物(说明该人物的某些关键点被遮挡或截断了)；重复上述过程直至所有的关键点都有所属人物为止。
+        另外，在测试中作者采用了多个scale来应对不同scale的人的问题，相应的detection heatmaps取了avg，而对于tag heatmaps则进行了concat操作变成一个向量，然后直接比较向量距离而不是如上述所说根据peak值大小及tag值大小共同决定所属类别。
+
+4.A simple yet effective baseline for 3d human pose estimation
+大体方法：
+a.网络结构，hourglass+直接回归。感觉没啥亮点，要说有的话，可能就是回归那里用了个类似残差模块的东西，即把最初输入加到输出里了。

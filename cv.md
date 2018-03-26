@@ -304,4 +304,8 @@ tf.contrib.image.transform(
     对于一个小批次中的输入数据x1-xm,可得其均值为x_avg=sum(xi)/m,而方差则为var=sum((xi-x_avg)**2)/m,则经过归一化之后的数据为xi_norm=(xi-x_avg)/sqrt(var+a),易知xi_norm的均值为0，方差为var/(var+a),(不知道为啥需要加个a),最后输出的结果yi=gamma\*xi_norm+beta,其中的gamma和beta是需要网络自己去学习和更新的参数，更通俗的叫法，gamma称为scale，即放缩尺度，beta称为shift，即偏移。
 3、group normalization(组归一化)。
     起因：batch normalization需要较大的batch size，否则会导致批统计不准确而提高模型的错误率。
+
+
+2018.03.26
+1、预测各个关键点时，被遮挡的关键点对应的heatmap清零与否对最终效果的影响？
     

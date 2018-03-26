@@ -286,7 +286,7 @@ tf.contrib.image.transform(
 5、bn和relu放在conv前/后？
 
 2018.03.22
-1、cpm、hourglass都要求输入的图像目标在中央位置。
+1、cpm、hourglass都要求输入的图像目标在中央位置,应该说训练时和测试时要一致，不抠出目标的比抠出目标的效果差。
 2、bottom-up方法，不需要预先知道各个人的位置信息(PAF,但是，为什么呢？)；top-down，主要为detector+单人姿态估计。
 相比而言，top-down方法对硬件的要求高，实时性+准确性方面，top-down方法的alphapose超过了bottom-up方法的openpose及mask-rcnn等，但是我决定这个太吃硬件了。
 6、tf.nn.l2_loss() tf.losses.mean_squared_error(),后者默认是除了像素平均值的。。。
@@ -304,3 +304,4 @@ tf.contrib.image.transform(
     对于一个小批次中的输入数据x1-xm,可得其均值为x_avg=sum(xi)/m,而方差则为var=sum((xi-x_avg)**2)/m,则经过归一化之后的数据为xi_norm=(xi-x_avg)/sqrt(var+a),易知xi_norm的均值为0，方差为var/(var+a),(不知道为啥需要加个a),最后输出的结果yi=gamma\*xi_norm+beta,其中的gamma和beta是需要网络自己去学习和更新的参数，更通俗的叫法，gamma称为scale，即放缩尺度，beta称为shift，即偏移。
 3、group normalization(组归一化)。
     起因：batch normalization需要较大的batch size，否则会导致批统计不准确而提高模型的错误率。
+    

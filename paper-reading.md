@@ -1,6 +1,17 @@
 //论文阅读。
+//感觉可以研究的两个方向:
+1、bottom-up一步生成各个关键点坐标的精确性，(ae好像对分类已经做的不错了)
+2、3d的pose预测。
+3、multi-scale的问题。
 before:有空补。
-
+补:
+2018.03.27
+1、Learning Feature Pyramids for Human Pose Estimation(在mpii单人测试依然排名第一)
+主体结构还是hourglass，也属于top-down方法，不过作者主要focus在第二步，即关键点detection。主要创新点有以下几个：
+a.对residual module进行了深入挖掘，一口气提出了四种称之为PRM(Pyramid Residual Modules,金字塔残差模块)的结构,具体来说就是传统的residual module都是针对一个scale的feature maps来进行特征提取，而PRM采用了多个scale的feature maps(具体方法就是下面提到的fractional pooling，分数卷积)。
+b.fractional pooling,即卷积的缩小倍数不是整数倍，为的是获取多个scale的feature maps，但实测效果不佳，有可能是参数没调好或者其他未知原因。
+c.提出了一中多branch的初始化方式，但是在github上的代码里并未释出。
+d.解决了variance explosion的问题,即在hourglass的上采样那里identity mapping改为了一个卷积操作。
 
 
 
@@ -19,7 +30,8 @@ b.数据预处理。原文实验表明256*192的效果和256*256的效果一样�
 a.网络结构,和一般的bottom-up不断subsampling并提取高层特征再top-down不断upsampling融合各层特征且只在最后一个upsampling层进行预测不同,fpn在top-down阶段的每一层融合特征后都进行预测,上一层的特征经过upsampling后与subsampling阶段对应channel的特征进行融合然后再进行预测,每层都如此。
 b.数据预处理,未明。
 
-3.associated embeddings:xxxx
+2018.03.26
+1.associated embeddings:xxxx
 用于:多人目标检测和实例分割(好像这块作者做的不是很好暂时不提了)。本文作者从开始就一直在输出一个观点，即许多cv任务都可以看作是两个大的过程:detection+grouping,检测+分组。用在human pose estimation这方面，就是检测各个关键点+将各个关键点分离为独立的个人，本文所设计的两个损失函数也是基于这一观点出发的。(不知道是不是观点输出太强烈了所有被ICCV给rejected了。。。)
 大体方法:
 a.网络结构,大致同之前的hourglass,但是存在以下更改:
@@ -37,6 +49,31 @@ b.具体实现细节:
         采用的方法是迭代并从躯干、头部再到四肢，根据躯干关键点对应的detection heatmap通过nms(非最大值抑制，说白了就是通过设置一个threshold找到各个peaks,感觉这个阈值的设置还是挺重要的，设置小了会导致判别人数多了，设置大了可能导致判别人数比实际的少)来确定人数，并找到对应tag heatmap中peak位置对应的值，这样就形成了初始的状态，然后开始迭代过程：根据各个关键点的detection heatmaps找到对应peak位置tag heatmaps的值，并根据其peak的值的大小及对应tag的值的大小共同判断是否属于现有人物中的某个的关键点(具体来说还是设置一个阈值),若对于现有的所有人都不match，则新增一个人物(说明该人物的某些关键点被遮挡或截断了)；重复上述过程直至所有的关键点都有所属人物为止。
         另外，在测试中作者采用了多个scale来应对不同scale的人的问题，相应的detection heatmaps取了avg，而对于tag heatmaps则进行了concat操作变成一个向量，然后直接比较向量距离而不是如上述所说根据peak值大小及tag值大小共同决定所属类别。
 
-4.A simple yet effective baseline for 3d human pose estimation
+2.A simple yet effective baseline for 3d human pose estimation
 大体方法：
 a.网络结构，hourglass+直接回归。感觉没啥亮点，要说有的话，可能就是回归那里用了个类似残差模块的东西，即把最初输入加到输出里了。
+
+2018.03.27
+1、Towards accurate multi-person estimation in the wild+PersonLab
+a.网络结构：faster-rcnn+cnn(先扣出单个人再进行关键点定位,具体结构为resnet类)
+把问题看成是分类+回归问题，首先是分类(如下a所述)：将heatmap中各个像素点分为两类，值为1的表示在真实位置一定范围内，否则为0；然后是回归(如下b所述)：即对每一个关键点k生成一个矢量图，表明每个像素点的位置与关键点k的位置的偏移(xk-x),从图上来看，就类似于对于每个gt关键点k，其他像素点均从自己出发指向k。
+主要是改变了heatmaps的生成方式，从原本简单的二维高斯核变为：
+    a.对于距离gt keypoint位置小于一定距离R的像素点值均置为1，形成一个圆形;
+    b.offset vector，即每个像素点的值为其位置与真实位置的差，是个2-channel向量(personlab中限定了像素点为a中的值为1的)。
+    最终生成的heatmap由这两个融合而成，是一种hough transform(霍夫变换)的形式。
+    
+    另外，a、b的生成是使用了atrous conv(空洞卷积)。
+    与此同时，相应的损失函数也改了：
+    对于a而言，使用的损失函数为logistic loss，即经典的二分类损失,计算loss是是对整幅图片尺寸大小进行计算(排除了关键点未完全标记的部分);
+    对于b而言，使用的损失函数为L1 loss(personlab)/Huber loss(G-RMI),计算loss时只计算在R范围内的(personlab)并且,除以R以normlize(personlab);
+    另外两种loss间存在权重关系。
+
+b.
+
+
+2、ArtTrack: Articulated Multi-person Tracking in the Wild
+deeper cut的进化版，相比于其他的不咋地。
+
+3、Binarized Convolutional Landmark Localizers for Human Pose Estimation and Face Alignment with Limited Resoures
+目标是在保存性能的情况下减小gpu显存的利用,主要使用的是二值卷积，即权重的值不是1就是-1。
+结论：binary效果相比非binary的不太行(降了大概10多个百分点),但是作者声称可以在单个cpu上实现实时的效果;但是使用它改进的residual module能在减小计算负担的情况下稍微提升测试结果。

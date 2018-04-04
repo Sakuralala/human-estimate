@@ -64,7 +64,6 @@ input_para = {
 #layers
 layer_para = {
     'weight_decay': 0.0,
-    #'weight_decay_rate': 0.1,
     'weight_stddev': 1.0,
     'bn_decay': 0.99,
     'bn_epsilon': 1e-4,

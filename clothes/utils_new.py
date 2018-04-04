@@ -1,4 +1,4 @@
-#使用np的一些杂的功能
+#一些杂的辅助函数
 import numpy as np
 import cv2
 import tensorflow as tf
@@ -40,45 +40,78 @@ def rotate_and_scale(image, angle, center=None, scale=1.0):
     #得到仿射变换矩阵
     M = cv2.getRotationMatrix2D(center, angle, scale)
     #进行仿射变换
-    rotscal= cv2.warpAffine(image, M, (w, h))
+    rotscal = cv2.warpAffine(image, M, (w, h))
 
-    return M,rotscal
+    return M, rotscal
 
+def _get_rel(kpt_coor,image_size):
+    '''
+    desc:用以生成maps的辅助函数,用以取得每个图片的每个像素点的位置相对关键点坐标的偏移。
+    '''
+    kpt_num = kpt_coor.shape[0]
+    kpt_coor = kpt_coor.astype(np.int)
+    x = np.linspace(0, image_size[1] - 1, image_size[1])
+    y = np.linspace(0, image_size[0] - 1, image_size[0])
+    y_t, x_t = np.meshgrid(y, x)
+    y_t = np.transpose(y_t, (1, 0))
+    x_t = np.transpose(x_t, (1, 0))
+    #[h,w,kpt_num]
+    y_t = np.tile(np.expand_dims(y_t, 2), (1, 1, kpt_num))
+    #[h,w,kpt_num]
+    x_t = np.tile(np.expand_dims(x_t, 2), (1, 1, kpt_num))
+    x_rel = x_t - kpt_coor[:, 0]
+    y_rel = y_t - kpt_coor[:, 1]
 
-def make_gt_heatmaps(kpt_coor,map_size,sigma,mask):
+    return x_rel,y_rel
+
+def make_gt_heatmaps(kpt_coor, image_size, sigma, mask):
     '''
     desc:生成真实的heatmaps
     args:
         kpt_coor:真实关键点坐标 先x后y
-        map_size:图片大小
+        image_size:图片大小
         sigma:方差
         mask:表示对应关键点是否被遮挡
     '''
-    kpt_num=kpt_coor.shape[0]
-    kpt_coor=kpt_coor.astype(np.int)
-    x=np.linspace(0,map_size[1]-1,map_size[1])
-    y=np.linspace(0,map_size[0]-1,map_size[0])
-    y_t,x_t=np.meshgrid(y,x)
-    y_t=np.transpose(y_t,(1,0))
-    x_t=np.transpose(x_t,(1,0))
-    #[h,w,kpt_num]
-    y_t=np.tile(np.expand_dims(y_t,2),(1,1,kpt_num))
-    #[h,w,kpt_num]
-    x_t=np.tile(np.expand_dims(x_t,2),(1,1,kpt_num))
-    x_rel=x_t-kpt_coor[:,0]
-    y_rel=y_t-kpt_coor[:,1]
+    x_rel,y_rel=_get_rel(kpt_coor,image_size)
     #(x-u)**2+(y-v)**2
     #[h,w,kpt_num]
-    distance=np.square(x_rel)+np.square(y_rel)
+    distance = np.square(x_rel) + np.square(y_rel)
     #[h,w,kpt_num]
     #* 除去被遮挡或不在图片范围内的点
-    gt_heatmaps=np.exp(-distance/sigma**2)*mask
+    gt_heatmaps = np.exp(-distance / sigma**2) * mask
     #3个像素点以外的值均为0
-    gt_heatmaps=np.where(gt_heatmaps>np.exp(-18),gt_heatmaps,0)
+    gt_heatmaps = np.where(gt_heatmaps > np.exp(-18), gt_heatmaps, 0)
 
     return gt_heatmaps
 
 
+def make_probmaps_and_offset(kpt_coor, image_size, radius, mask):
+    '''
+    desc:产生以关键点坐标为圆心，半径为r范围内值为1其他点的值为0的probmaps。
+    args:
+        kpt_coor:关键点坐标，先x后y。
+        image_size:图片大小。
+        radius:半径。
+        mask:遮挡及不存在的点的掩码。
+    '''
+    x_rel,y_rel=_get_rel(kpt_coor,image_size)
+    distance = np.square(x_rel) + np.square(y_rel)
+    #[h,w,kpt_num]
+    probmaps=np.where(distance<=radius**2,1,0)*mask
+
+    #在半径外的像素点的x和y的相对坐标全置为零
+    #取-是表示从各个像素点位置指向关键点的向量
+    x_rel,y_rel=-x_rel*probmaps,-y_rel*probmaps
+    #[h,w,kpt_num,2]
+    offset=np.stack([y_rel,x_rel],-1)*mask
+    #完整的真实标签
+    total=np.concatenate((np.expand_dims(probmaps,-1),offset),-1)
+
+    return probmaps,offset
+
+    
+#用这个的话产生的event文件就太大了。。。。。
 def variable_summaries(var):
     '''
     desc:可视化。

@@ -396,10 +396,15 @@ tf.contrib.image.transform(
                              ' is not supported on Windows (no marshalling of'
                              ' generators across process boundaries). Instead,'
                              ' use single thread/process or multithreading.')
-    
-4、multiprocessing 共享numpy的array。
+            (以下为我的解决方法)
+            总的来说就是使用迭代器来代替生成器。具体来说，即写一个用以数据处理和生成的类，然后:
+            1、类中建立一个叫做next()的方法,数据的预处理和最后图片和标签batch的生成均写进next()方法中，而后generatorenqueuer接收的参数即这个类的一个实例即可。
+            2、原本生成器自动保存的一些局部变量及状态等，直接存进类中。 
+
+4、multiprocessing 共享numpy的array。(TODO)
     a.np.memmap
     b.sharedmem模块
+    note:可以直接从原始csv、json文件读入并直接处理，这样也非常快(非常容易就把cpu、gpu利用率占满了)，而且占用内存小。
 
 2018.04.03
 1、multiprocessing，父进程中打开的文件在子进程中却是关闭的？
@@ -446,3 +451,29 @@ tf.contrib.image.transform(
 4、tensorboard相关：
     tf.summary.:image、histgram、scalar(常用的三种)
     记得最后需要tf.summary.merge_all()
+
+
+2018.04.04
+1、python的生成器，若是nested(即多个嵌套的),则每个都需要调用一次next()方法。
+2、cv2的函数里要输入坐标或size时默认顺序是先x后y的。
+3、np.where(condition):
+    返回的是一个tuple,其中tuple的长度为输入的array的维数，
+    tuple中的每个elem为一个一维array，其中array中的每个元
+    素代表对应维的索引，结合各个elem中相同位置的元素则可得到
+    一个完整的索引。
+
+4、常用的四种交叉熵(cross-entropy)损失函数的定义：
+    首先，最大似然估计(MLE):已知一组数据的观测值x,未知的分布模型model,则有x出现的概率P(x|model),最大似然估计就是寻找模型的一组参数值θ使得出现观测值x的概率P(x|model)最大化。即求：
+    argmaxθ(p(x1|θ)\*p(x2|θ)\*p(xn|θ)),由于连乘可能使得结果接近于0，所以实际操作时一般取对数(对数使得连乘变成连加，而又由于log为单调递增，故不会改变极值的位置)
+    其次是相对熵，假设存在两个数据的分布p、q，则其相对熵定义为：
+    D(p||q)=∑p(x)log(p(x)/q(x))=∑p(x)\*log(p(x))-∑p(x)\*log(q(x));其中H(p)=∑p(x)\*log(p(x))称为分布p的熵，
+    而CE(p,q)=-∑p(x)\*log(q(x))即称为p、q的交叉熵。
+
+    用在分类问题中，即可简化为CE(p,q)=-(p(x)\*log(q(x))+(1-p(x))\*log(1-q(x)))。(标签非0即1，表示属不属于对应类别)
+    a.sigmoid。
+    适用条件：每个实例属于的类可以不唯一，即可以用于多元问题，但是不可以直接用在多分类问题中，可通过one-hot编码进行变通从而达到多分类的效果，综上，即可用在多元多分类问题中。
+    令z为真实标签值([batch_size,classes]，值非0即1)，x为预测的标签值:
+    L=-(z\*log(sigmoid(x))+(1-z)\*log(1-sigmoid(x)))
+    b.softmax。 
+    softmax = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), axis)
+    适用条件：多分类问题，每个实例属于的类必须唯一。

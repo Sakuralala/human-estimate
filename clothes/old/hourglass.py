@@ -70,13 +70,10 @@ class HourglassModel():
                         conv4 = conv_block(inter_output, 1, 1,
                                            self.output_features, 'conv3',do_normalization=False,do_RELU=False)
                         inter_total = tf.add_n([inter_total, conv3, conv4])
-                        #inter_total= batch_normalization(inter_total,layer_para['bn_decay'] ,
-                        #            layer_para['bn_epsilon'],name='batch_normalized_inter_total')
-                        #inter_total=tf.nn.relu(inter_total,'activated_inter_total')
+
         return self.output
     #计算损失
     def loss_calculate(self, gt_heatmaps):
-        #batch_size = tf.shape(self.output[0])[0]
         with tf.variable_scope('Loss'):
             #for i,output in enumerate(self.output):
             for i in range(len(self.output)):

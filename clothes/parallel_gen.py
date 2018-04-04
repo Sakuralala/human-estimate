@@ -6,8 +6,6 @@ import multiprocessing as mp
 #下面两个用以多线程
 import threading
 import queue as q
-import os 
-import sys
 
 #参考 from https://github.com/keras-team/keras/blob/master/keras/utils/data_utils.py
 class GeneratorEnqueuer():
@@ -42,12 +40,11 @@ class GeneratorEnqueuer():
                 try:
                     #generated_output = next(self.generator)
                     #Q:此处generator是否会被独立复制多次？
-                    #A:会 子进程在创建时复制父进程的所有资源
-                    #A:spawn方法  子进程仅继承父进程的必要资源
+                    #A:spawn方法  子进程仅继承父进程的必要资源(但是，什么是必要资源呢)
                     generated_output=self.generator.next()
                     #put是否为原子性操作？
-                    #是原子操作  详见官方文档:manager.Queue->Queue->deque
-                    #通过manager创建的queue是共享的
+                    #是原子操作  详见官方文档:Queue->Queue->deque
+                    #创建的queue是共享的
                     self.queue.put(generated_output)
                 #迭代结束
                 except StopIteration:
@@ -131,7 +128,7 @@ class GeneratorEnqueuer():
         '''
         while self.is_running():
             if not self.queue.empty():
-                #是原子操作  详见官方文档:manager.Queue->Queue->deque
+                #是原子操作  详见官方文档:Queue->Queue->deque
                 val=self.queue.get()
                 if val is not None:
                     yield val

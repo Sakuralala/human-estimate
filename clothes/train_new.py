@@ -60,6 +60,7 @@ def train(category,csv_file):
         saver = tf.train.Saver(
             max_to_keep=0, keep_checkpoint_every_n_hours=4.0)
         ckpt = tf.train.get_checkpoint_state(dir_para['trained_model_dir'])
+        #查看是否存在预训练的模型
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(sess, ckpt.model_checkpoint_path)
             print('reload model.')
@@ -82,17 +83,7 @@ def train(category,csv_file):
                 #writer.add_run_metadata(run_metadata,'step %d'%step)
                 if (step % train_para['show_loss_freq']) == 0:
                     print('Iteration %d\t Loss %.3e' % (step, loss_v))
-                    '''
-                    cv2.imwrite('.//outimg//image0.png',image_batch[0])
-                    gt_heatmaps=label_batch[0][:,:,0]
-                    cv2.imwrite('.//outimg//pre0.png',output_v3[0,:,:,0])
-                    print(output_v3.shape,np.max(output_v3[0]))
-                    for i in range(1,output_v3.shape[-1]):
-                        #叠加的gt_heatmaps
-                        gt_heatmaps=cv2.addWeighted(gt_heatmaps,0.5,label_batch[0][:,:,i],0.5,0) 
-                        cv2.imwrite('.//outimg//pre%s.png'%i,output_v3[0,:,:,i])
-                    cv2.imwrite('.//outimg//gt.png',gt_heatmaps)
-                    '''
+
                 if (step % train_para['show_lr_freq']) == 0:
                     print('Current lr:', sess.run(lr))
                     sys.stdout.flush()
@@ -104,6 +95,7 @@ def train(category,csv_file):
                         global_step=step)
                     print('Saved a trained_model.')
                     sys.stdout.flush()
+
             except tf.errors.OutOfRangeError:
                 break
 

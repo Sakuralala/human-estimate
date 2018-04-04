@@ -121,7 +121,8 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
         #每个gaussian_map上仅坐标等于关节点坐标的位置distance为0，强度最大，其他位置按照正态分布递减
         distance = tf.square(X_relative) + tf.square(Y_relative)
         gaussian_map = tf.exp(-distance / sigma) * tf.cast(cond, tf.float32)
-        gaussian_map=tf.maximum(gaussian_map,1e-18)
+        #把3个像素外的值全设置为0
+        gaussian_map=tf.cast(tf.greater(gaussian_map,1e-18),tf.float32)*gaussian_map
         #背景 [256,256,1]
         #background_gaussian_map=tf.expand_dims(tf.zeros([map_size[0],map_size[1]]),-1)
         background_gaussian_map = tf.expand_dims(
@@ -131,8 +132,8 @@ def make_gaussian_map(keypoint_coordinates, map_size, sigma, valid_vec=None):
         #background_gaussian_map -= total
         #[256,256,22]
         gaussian_map = tf.concat([gaussian_map, background_gaussian_map], -1)
-        #gaussian_map=tf.image.resize_bilinear(tf.expand_dims(gaussian_map,0),[map_size[0]//4,map_size[1]//4])
-        #gaussian_map=tf.squeeze(gaussian_map)
+        gaussian_map=tf.image.resize_bilinear(tf.expand_dims(gaussian_map,0),[map_size[0]//4,map_size[1]//4],align_corners=True)
+        gaussian_map=tf.squeeze(gaussian_map)
         return gaussian_map
 
 
@@ -167,8 +168,8 @@ def kpt_coor_translate(coor,scale,old_center,new_center):
     new_coor_relative=(coor_relative+0.5)*scale-0.5
     new_coor=new_coor_relative+new_center
     new_size=(new_center+1)*2
-    new_coor_x=tf.minimum(tf.maximum(new_coor[:,1],0),new_size[1])
-    new_coor_y=tf.minimum(tf.maximum(new_coor[:,0],0),new_size[0])
+    new_coor_x=tf.minimum(tf.maximum(new_coor[:,1],0),new_size[1]-1)
+    new_coor_y=tf.minimum(tf.maximum(new_coor[:,0],0),new_size[0]-1)
     #print(new_coor_y.shape)
     new_coor=tf.stack([new_coor_y,new_coor_x],-1)    
     new_coor=tf.cast(tf.round(new_coor),tf.int32)

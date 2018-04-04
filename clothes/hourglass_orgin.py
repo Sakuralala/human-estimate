@@ -26,22 +26,35 @@ class HourglassModel():
         self.loss = []
         #self.input = None
 
-    def build_model(self, input):
+    def build_model(self, input,use_loc=False):
         with tf.variable_scope('hourglass_model'):
+            #使用stn
+            if use_loc:
+                theta=res18_loc(input)
+                input=tf.contrib.image.transform(input,theta,'BILINEAR')
+                #[8,256,256,3]
+                #print(input.shape)
             conv1 = conv_block(input, 7, 2, 64, 'conv1',do_normalization=False,do_RELU=False)
-            res1 = PRMB_block(conv1,self.output_features//2, name='res1')
+            #tf.summary.histogram('conv1',conv1)
+            res1 = residual_block2(conv1,self.output_features//2, name='res1')
+            #tf.summary.histogram('res1',res1)
             pool = max_pool(res1, 2, 2)
-            res2 = PRMB_block(pool,self.output_features // 2,name='res2')
-            inter_total = PRMB_block(res2, 
+            res2 = residual_block2(pool,self.output_features // 2,name='res2')
+            #tf.summary.histogram('res2',res2)
+            inter_total = residual_block2(res2, 
                                          self.output_features, name='res3')
+            #tf.summary.histogram('res3',inter_total)
 
             for i in range(self.stack_number):
                 with tf.variable_scope('hourglass' + str(i + 1)):
                     hourglass = self.hourglass2(inter_total, self.stage)
-                    hourglass = PRMB_block(hourglass,
+                    tf.summary.histogram('hourglass%s'%(i+1),hourglass)
+                    hourglass = residual_block2(hourglass,
                                                self.output_features, name='res4')
+                    #tf.summary.histogram('res4',hourglass)
                     conv2 = conv_block(hourglass, 1, 1, self.output_features,
                                        'conv1')
+                    #tf.summary.histogram('conv1',conv2)
                     inter_output = conv_block(
                         conv2,
                         1,
@@ -50,6 +63,12 @@ class HourglassModel():
                         'inter_output',
                         do_normalization=False,
                         do_RELU=False)
+                    tf.summary.histogram('inter_output',inter_output)
+                    for i in range(inter_output.get_shape()[-1]): 
+                        pred_heatmap0=tf.expand_dims(inter_output[0,:,:,i],-1)
+                        pred_heatmap0=tf.expand_dims(pred_heatmap0,0)
+                        tf.summary.image('pre_heatmaps0',pred_heatmap0,max_outputs=24)
+                    #print(inter_output.name)
                     #height = inter_output.get_shape().as_list()[1]
                     #width = inter_output.get_shape().as_list()[2]
                     #height=tf.shape(inter_output)[1]
@@ -67,23 +86,31 @@ class HourglassModel():
                             do_normalization=False,
                             do_RELU=False
                         )
+                        #tf.summary.histogram('conv2',conv3)
                         conv4 = conv_block(inter_output, 1, 1,
                                            self.output_features, 'conv3',do_normalization=False,do_RELU=False)
+                        #tf.summary.histogram('conv3',conv4)
                         inter_total = tf.add_n([inter_total, conv3, conv4])
+                        #tf.summary.histogram('inter_total',inter_total)
                         #inter_total= batch_normalization(inter_total,layer_para['bn_decay'] ,
                         #            layer_para['bn_epsilon'],name='batch_normalized_inter_total')
                         #inter_total=tf.nn.relu(inter_total,'activated_inter_total')
         return self.output
     #计算损失
     def loss_calculate(self, gt_heatmaps):
+        #真实heatmaps
+        for i in range(gt_heatmaps.get_shape()[-1]): 
+            gt_heatmap0=tf.expand_dims(gt_heatmaps[0,:,:,i],-1)
+            gt_heatmap0=tf.expand_dims(gt_heatmap0,0)
+            tf.summary.image('gt_heatmaps0',gt_heatmap0,max_outputs=24)
         #batch_size = tf.shape(self.output[0])[0]
         with tf.variable_scope('Loss'):
             #for i,output in enumerate(self.output):
             for i in range(len(self.output)):
+                loss=tf.losses.mean_squared_error(gt_heatmaps,self.output[i])
                 #loss = tf.nn.l2_loss(self.output[i] - gt_heatmaps,
-                #                     'inter_loss' + str(i + 1)) /train_para['batch_size'] 
+               #                      'inter_loss' + str(i + 1)) /train_para['batch_size'] 
                 #loss=tf.reduce_sum(tf.square(self.output[i],gt_heatmaps))/train_para['batch_size']
-                loss=tf.losses.mean_squared_error(gt_heatmaps,self.output[i],reduction=tf.losses.Reduction.SUM_OVER_BATCH_SIZE)
                 self.loss.append(loss)
                 tf.summary.scalar(loss.op.name, loss)
             total_loss = tf.add_n(self.loss, 'Total_loss')
@@ -124,18 +151,18 @@ class HourglassModel():
         if stage < 1:
             raise ValueError('Stage must >=1!')
         with tf.variable_scope('stage' + str(stage)):
-            up = PRMB_block(input,
+            up = residual_block2(input,
                                 self.output_features, name='up')
             down = max_pool(input, 2, 2, 'maxpooling')
-            down = PRMB_block(down,
+            down = residual_block2(down,
                                   self.output_features,name='down')
             if stage > 1:
                 ret = self.hourglass2(down, stage - 1)
             else:
-                ret = PRMB_block(down,
+                ret = residual_block2(down,
                                      self.output_features, name='inest_res')
-            ret = PRMB_block(ret,
-                                 self.output_features, use_conv=True,name='res')
+            ret = residual_block2(ret,
+                                 self.output_features,True,name='res')
             height = tf.shape(ret)[1]
             width = tf.shape(ret)[2]
             #坑爹 这里*2回去可能会比up尺寸大  比如up是13那么maxpool再resize就变成了14.。。草

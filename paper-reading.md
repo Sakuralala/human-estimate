@@ -13,16 +13,35 @@ b.fractional pooling,即卷积的缩小倍数不是整数倍，为的是获取�
 c.提出了一中多branch的初始化方式，但是在github上的代码里并未释出。
 d.解决了variance explosion的问题,即在hourglass的上采样那里identity mapping改为了一个卷积操作。
 
+2018.03.28
+1、Adversarial PoseNet:A Structure-aware Convolutional Network for Human Pose Estimation
+适用于：单人，detection那步也被省略了。把hourglass和gan网络结合了。(作者在github上说1月就放出代码，现在去看，他竟然把那个responsity删了。。。。)
+网络结构：
+    a.生成网络G，主体结构为hourglass的copy，区别在于输出，改为两种heatmaps，一种为gt,一种为occlussion；另外，在一个hourglass中又分为两个部分，上半部分产生的gt，下半部分产生occl。
+    b.判别网络分为两个P与C，其中C用以判断一个heatmap的置信度，输出一个1*16的vector，每个element表示对应关键点heatmap位置的得分；P用以判断关节点的位置是否正确，也输出一个1\*16的vector，每个element代表是否在正确位置。
+    loss为g的loss(应该为mse)+两个判别网络的损失。
+
+2、RMPE：Regional Multi-Person Pose Estimation(最新更新的版本在mpii多人测试中已经排名第一，但没有登出不知为何)
+SJTU的一篇论文，典型的top-down方法，其中两个部分的主体方法都是用的现成的，即faster-rcnn+pyranet。
+主要的创新点的话有以下几个：
+a.一个对称的stn网络，其中取得参数theta的localisation网络在定位网络之后，de-transform在pyranet之后(用以将经过仿射变换的图像变换回原坐标);
+b.一个并行的stack hourglass网络，这个网络是为了不影响主路的精度，从实验结果来看并没啥大影响(降了1.7个百分点);
+c.参数化的nms(非最大值抑制)，为的是减小detection部分的冗余，消除标准就是一堆公式，感觉很吃硬件,对最终结果影响很大，降了大概5个百分点；
+d.Pose-guided Proposals Generator,对于划分好的atom pose(元姿态),通过学习不同atom pose的detected bounding box和gt bounding box之间的相对偏移的分布，并通过k-means算法聚类找到相似的pose，然后通过detection生成的bounding box来生成一个对应的伪gt bounding box来提升性能,这个对最终结果影响最大，有8个百分点；
+
+3、
+
+
 
 
 2018.03.23
 1、cpn(级联金字塔网络)
-用于:关键点检测。
+用于:关键点检测,属于top-down方法。
 大体方法:
 a.网络结构。属于top-down类,其中第一步的detector基于fpn(特征金字塔网络)+mask rcnn中的roiAlign,属于直接拿来用的部分,略过不谈;第二步即关键点检测部分,采用的是两个net,
     其一称为globalnet,用以检测easy points,即容易定位的关键点,整体是个U-shape,类似fpn,原理大概是浅层特征能够较好地定位关键点信息,但是由于感受野较小,难以提供用以识别的语义信息;深层特征由于感受野较大拥有较丰富的语义信息但由于conv和pool的原因分辨率较小难以提供准确的关键点信息;因此使用U-shape结构可以较好地融合这些信息来获得比较好的检测定位效果(说白了就是将各个层的信息相加呗),至于loss的计算,由于是在每个融合特征层进行分别预测,那么尺寸是不一样的,所以对每一层而言heatmap的尺寸也是不同的(应该是进行resize操作了的？);
     其二称为refinenet,用来检测定位前面globalnet不能很好地预测的关键点hard points,如被遮挡的部分,具体来说就是globalnet中的每层feature经过一定数量的bottleneck(应该就是residual模块,浅层用的少,深层用的多)后再经过upsampling操作,最后不同层的结果进行concat(与hourglass的+不同)。另外,为了让refinenet专注于定位hard points,原文采用了一个称之为hard points online studying的方法,说白了就是设定一个hardpoints的数量m,然后在refinenet反向传播loss的时候只把所有关键点里loss为前m个的传回去(具体实现,个人觉得是把其他的关键点的loss置为0即可),原文中选的m值为总关键点数量的一半,效果最好。
-b.数据预处理。原文实验表明256*192的效果和256*256的效果一样好,因为人的尺寸一般不是方形的,但更节省内存,可以用于提高batch size;图片尺寸越大,效果越好;rotation、scale等常用手段,以及large batch,这个很重要。
+b.数据预处理。原文实验表明256\*192的效果和256\*256的效果一样好,因为人的尺寸一般不是方形的,但更节省内存,可以用于提高batch size;图片尺寸越大,效果越好;rotation、scale等常用手段,以及large batch,这个很重要。
 
 2.fpn(特征金字塔网络)
 用于:理论上可用于任何cnn结构。

@@ -49,14 +49,16 @@ categories_dict = {
     'full':all_kpt_list
 }
 
-categories = ['blouse','skirt','outwear','trousers','dress','full']
+categories = ['skirt','blouse','outwear','trousers','dress','full']
 #input
 input_para = {
     'height': 512,
     'width': 512,
     'channels': 3,
     'train_num': 31631,
-    'test_num': 9996
+    'test_num': 9996,
+    'resized_height':256,
+    'resized_width':256
 }
 
 #layers
@@ -70,15 +72,16 @@ layer_para = {
 
 #train
 train_para = {
-    'batch_size': 8,
-    'max_iter': 200000,
-    'save_freq':10000,
+    'batch_size': 12,
+    'max_iter': 400000,
+    'save_freq':20000,
     'show_lr_freq': 500,
     'show_loss_freq': 50,
-    'lr_decay_steps': 50000,
+    'lr_decay_steps': 100000,
     'lr_decay_rate': 0.5,
-    'init_lr': 1e-3,
+    'init_lr': 2e-4,
     'is_train': True,
+    'epoch':50
 }
 
 #dir
@@ -87,7 +90,7 @@ dir_para = {
     'trained_model_dir':
     './trained_model',
     'log_dir':
-    './log/',
+    './logsin/',
     'tf_dir':
     './tfrec/',
     'tf_dir_test':
@@ -98,4 +101,4 @@ dir_para = {
     'D:\\clothes\\tianchi\\fashionAI_key_points_test_a_20180227\\test'
 }
 
-thred=1e-5
+thred=1e-3

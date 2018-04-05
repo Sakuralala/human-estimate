@@ -28,7 +28,7 @@ def train(category,csv_file):
             file_list=f.readlines()[1:]
         gen=clothes_batch_generater()
         #生成generator
-        batch=gen.generate_batch(category,file_list,4,8,train_para['batch_size'])
+        batch=gen.generate_batch(category,file_list,2,8,train_para['batch_size'])
 
         #为了之后test能够喂进不同的数据
         #image
@@ -49,7 +49,7 @@ def train(category,csv_file):
             train_para['init_lr'],
             global_step,
             decay_steps=train_para['lr_decay_steps'],
-            decay_rate=train_para['lr_decay_rate'])
+            decay_rate=train_para['lr_decay_rate'],staircase=True)
         opt = tf.train.AdamOptimizer(lr)
         train_op = opt.minimize(loss, global_step=global_step)
         merged_op = tf.summary.merge_all()

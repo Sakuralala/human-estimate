@@ -5,6 +5,7 @@ import numpy as np
 import os
 from params_clothes import *
 
+
 def _res18_block(input, num_outputs, size=3, stride=1, name='res18_block'):
     with tf.variable_scope(name):
         bn1 = tf.contrib.layers.batch_norm(
@@ -223,6 +224,7 @@ def residual_block(input, out_channels, use_conv=False, name='residual_block'):
             input,
             epsilon=1e-5,
             decay=layer_para['bn_decay'],
+            scale=True,
             activation_fn=tf.nn.relu)
         conv1 = tf.contrib.layers.conv2d(
             bn1, out_channels // 2, 1, activation_fn=None)
@@ -230,6 +232,7 @@ def residual_block(input, out_channels, use_conv=False, name='residual_block'):
             conv1,
             epsilon=1e-5,
             decay=layer_para['bn_decay'],
+            scale=True,
             activation_fn=tf.nn.relu)
         conv2 = tf.contrib.layers.conv2d(
             bn2, out_channels // 2, 3, activation_fn=None)
@@ -237,18 +240,49 @@ def residual_block(input, out_channels, use_conv=False, name='residual_block'):
             conv2,
             epsilon=1e-5,
             decay=layer_para['bn_decay'],
+            scale=True,
             activation_fn=tf.nn.relu)
         conv3 = tf.contrib.layers.conv2d(
             bn3, out_channels, 1, activation_fn=None)
 
         #identify mapping
         if use_conv or tf.shape(input)[-1] != out_channels:
-            trans = tf.contrib.layers.conv2d(input, out_channels, 1)
+            #tensorflow/model 若要进行1x1卷积操作，则输入应该为经过pre-activation的
+            trans = tf.contrib.layers.conv2d(bn1, out_channels, 1)
             output = tf.add(conv3, trans, 'output')
         else:
             output = tf.add(conv3, input, 'output')
 
         return output
+
+
+def conv_block_new(input,
+                   output_num,
+                   kernel_size,
+                   stride,
+                   name='conv',
+                   padding='SAME',
+                   do_normalization=True,
+                   do_relu=True):
+    norm_fn = tf.contrib.layers.batch_norm if do_normalization == True else None
+    norm_paras = {
+        'decay': 0.99,
+        'center': True,
+        'scale': True,
+        'epsilon': 1e-3
+    }
+    activation_fn = tf.nn.relu if do_relu == True else None
+    output = tf.contrib.layers.conv2d(
+        input,
+        output_num,
+        kernel_size,
+        stride,
+        activation_fn=activation_fn,
+        normalizer_fn=norm_fn,
+        normalizer_params=norm_paras
+    )
+
+    return output
 
 
 # 简单封装的卷积层 padding模式默认为same

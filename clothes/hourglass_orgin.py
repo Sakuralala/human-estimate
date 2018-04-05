@@ -35,14 +35,12 @@ class HourglassModel():
                 theta = res18_loc(input)
                 input = tf.contrib.image.transform(input, theta, 'BILINEAR')
 
-            conv1 = conv_block(
+            conv1 = conv_block_new(
                 input,
+                self.output_features // 4,
                 7,
                 2,
-                64,
-                'conv1',
-                do_normalization=False,
-                do_RELU=False)
+                'conv1')
             #tf.summary.histogram('conv1',conv1)
             res1 = residual_block(
                 conv1, self.output_features // 2, name='res1')
@@ -61,17 +59,17 @@ class HourglassModel():
                     hourglass = residual_block(
                         hourglass, self.output_features, name='res4')
                     #tf.summary.histogram('res4',hourglass)
-                    conv2 = conv_block(hourglass, 1, 1, self.output_features,
-                                       'conv1')
+                    conv2 = conv_block_new(hourglass, self.output_features, 1,
+                                           1, 'conv1')
                     #tf.summary.histogram('conv1',conv2)
-                    inter_output = conv_block(
+                    inter_output = conv_block_new(
                         conv2,
-                        1,
-                        1,
                         self.number_classes,
+                        1,
+                        1,
                         'inter_output',
                         do_normalization=False,
-                        do_RELU=False)
+                        do_relu=False)
                     tf.summary.histogram('inter_output', inter_output)
                     for i in range(inter_output.get_shape()[-1]):
                         pred_heatmap0 = tf.expand_dims(
@@ -79,32 +77,26 @@ class HourglassModel():
                         pred_heatmap0 = tf.expand_dims(pred_heatmap0, 0)
                         tf.summary.image(
                             'pre_heatmaps0', pred_heatmap0, max_outputs=24)
-                    #print(inter_output.name)
-                    #height = inter_output.get_shape().as_list()[1]
-                    #width = inter_output.get_shape().as_list()[2]
-                    #height=tf.shape(inter_output)[1]
-                    #width=tf.shape(inter_output)[2]
-                    #resized_inter_output=tf.image.resize_bilinear(inter_output,[height*4,width*4])
-                    #self.output.append(resized_inter_output)
+
                     self.output.append(inter_output)
                     if i != self.stack_number - 1:
-                        conv3 = conv_block(
+                        conv3 = conv_block_new(
                             conv2,
-                            1,
-                            1,
                             self.output_features,
+                            1,
+                            1,
                             'conv2',
                             do_normalization=False,
-                            do_RELU=False)
+                            do_relu=False)
                         #tf.summary.histogram('conv2',conv3)
-                        conv4 = conv_block(
+                        conv4 = conv_block_new(
                             inter_output,
-                            1,
-                            1,
                             self.output_features,
+                            1,
+                            1,
                             'conv3',
                             do_normalization=False,
-                            do_RELU=False)
+                            do_relu=False)
                         #tf.summary.histogram('conv3',conv4)
                         inter_total = tf.add_n([inter_total, conv3, conv4])
                         #tf.summary.histogram('inter_total',inter_total)
@@ -113,13 +105,12 @@ class HourglassModel():
 
     #计算损失
     def loss_calculate(self, gt_heatmaps):
-        #真实heatmaps
-        for i in range(gt_heatmaps.get_shape()[-1]):
-            gt_heatmap0 = tf.expand_dims(gt_heatmaps[0, :, :, i], -1)
-            gt_heatmap0 = tf.expand_dims(gt_heatmap0, 0)
-            tf.summary.image('gt_heatmaps0', gt_heatmap0, max_outputs=24)
-
         with tf.variable_scope('Loss'):
+            #真实heatmaps
+            for i in range(gt_heatmaps.get_shape()[-1]):
+                gt_heatmap0 = tf.expand_dims(gt_heatmaps[0, :, :, i], -1)
+                gt_heatmap0 = tf.expand_dims(gt_heatmap0, 0)
+                tf.summary.image('gt_heatmaps0', gt_heatmap0, max_outputs=24)
             #for i,output in enumerate(self.output):
             for i in range(len(self.output)):
                 loss = tf.losses.mean_squared_error(gt_heatmaps,

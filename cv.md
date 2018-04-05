@@ -301,7 +301,7 @@ tf.contrib.image.transform(
     起因：每一层输入的数据的均值和方差都不一样,数据的分布也不一样,这样一来就难以有效地进行前向传播和反向传播,例如如果采用tanh激活函数,若输入中的某个值x过大,则易进入tanh函数的饱和区,使得x对应的输出接近1,也就是说输入就算再扩大经过激励后产生的输出也没有什么差别,即神经元对大的数据已经不敏感了,所以需要对输入的数据进行归一化,使得输入经过激励函数的敏感区域,有利于神经网络学习到有效的特征,而在反向传播时,经过每一层的梯度是需要和对应层的参数w相乘的,而由于数据已经经过了标准化,使得不同scale的参数w前面有一个不同的系数,scale大w的系数小,而scale小的w系数大,这样就有效地减小了梯度爆炸或弥散的可能性。
     具体做法：通过计算一个batch内的均值与方差来进行特征归一化,使得之后的数据均值为0,方差为1。注意,bn应该放在激励之前做,因为对于激励函数而言,输入数据的分布非常重要,batch normalization的目的就是使得输入的分布在激励函数的敏感区域内,这样更有利于激励函数的非线性化操作。
     具体公式：
-    对于一个小批次中的输入数据x1-xm,可得其均值为x_avg=sum(xi)/m,而方差则为var=sum((xi-x_avg)**2)/m,则经过归一化之后的数据为xi_norm=(xi-x_avg)/sqrt(var+a),易知xi_norm的均值为0,方差为var/(var+a),(不知道为啥需要加个a),最后输出的结果yi=gamma\*xi_norm+beta,其中的gamma和beta是需要网络自己去学习和更新的参数,更通俗的叫法,gamma称为scale,即放缩尺度,beta称为shift,即偏移。
+    对于一个小批次中的输入数据x1-xm,可得其均值为x_avg=sum(xi)/m,而方差则为var=sum((xi-x_avg)**2)/m,则经过归一化之后的数据为xi_norm=(xi-x_avg)/sqrt(var+a),易知xi_norm的均值为0,方差为var/(var+a)(加个很小的数a是为了避免除以0),最后输出的结果yi=gamma\*xi_norm+beta,其中的gamma和beta是需要网络自己去学习和更新的参数,更通俗的叫法,gamma称为scale,即放缩尺度,beta称为shift,即偏移。
 3、group normalization(组归一化)。
     起因：batch normalization需要较大的batch size,否则会导致批统计不准确而提高模型的错误率。
 
@@ -468,12 +468,29 @@ tf.contrib.image.transform(
     其次是相对熵，假设存在两个数据的分布p、q，则其相对熵定义为：
     D(p||q)=∑p(x)log(p(x)/q(x))=∑p(x)\*log(p(x))-∑p(x)\*log(q(x));其中H(p)=∑p(x)\*log(p(x))称为分布p的熵，
     而CE(p,q)=-∑p(x)\*log(q(x))即称为p、q的交叉熵。
+    然后，one-hot编码，主要是为了将标签转换为数字特征，对一些不存在相应大小关系的标签进行编码,表明属于/不属于。
 
-    用在分类问题中，即可简化为CE(p,q)=-(p(x)\*log(q(x))+(1-p(x))\*log(1-q(x)))。(标签非0即1，表示属不属于对应类别)
-    a.sigmoid。
-    适用条件：每个实例属于的类可以不唯一，即可以用于多元问题，但是不可以直接用在多分类问题中，可通过one-hot编码进行变通从而达到多分类的效果，综上，即可用在多元多分类问题中。
-    令z为真实标签值([batch_size,classes]，值非0即1)，x为预测的标签值:
-    L=-(z\*log(sigmoid(x))+(1-z)\*log(1-sigmoid(x)))
+    a.sigmoid、 logistic回归。
+    适用条件：每个实例属于的类可以不唯一，即可以用于多元问题，但是不可以直接用在多分类问题中，可通过one-hot编码进行变通从而达到多分类的效果(即从多分类问题变为多个二分类问题(属于、不属于))，综上，即可用在多元多分类问题中。
+    令z为真实标签值([batch_size,classes]，值非0即1)，x为预测的标签值,因为是二分类问题，分布的取值非0即1，所以交叉熵可以简化为:
+    CE=-(p(x)\*log(q(x))+(1-p(x))\*log(1-q(x)))
+    即有损失函数：
+    L=-(z\*log(sigmoid(x))+(1-z)\*log(1-sigmoid(x))),其中z、x若未经过one-hot编码，则适用于传统的二分类问题(单元)，若经过one-hot编码，则适用于多元/单元多分类问题。
     b.softmax。 
     softmax = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), axis)
-    适用条件：多分类问题，每个实例属于的类必须唯一。
+    适用条件：多分类问题，每个实例属于的类必须唯一,因为softmax函数将各个输入映射到一个概率，且总和为1。
+    L=-∑z*log(softmax(x)),其中z、x均已经过one-hot编码。
+
+2018.04.05
+1、bn的顺序问题:
+    a.conv->bn->relu  (post-activation)
+      He 15年的论文：Convolution then batch normalization then ReLU as described by:
+      Deep Residual Learning for Image Recognition
+      https://arxiv.org/pdf/1512.03385.pdf
+      by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Dec 2015.
+    b.bn->relu->conv  (pre-activation)
+      He 16年的论文：Batch normalization then ReLu then convolution as described by:
+      Identity Mappings in Deep Residual Networks
+      https://arxiv.org/pdf/1603.05027.pdf
+      by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
+      用后面这个效果更好。

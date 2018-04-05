@@ -39,8 +39,16 @@ def rotate_and_scale(image, angle, center=None, scale=1.0):
     rotscal = cv2.warpAffine(image, M, (w, h), )#flags=cv2.WARP_INVERSE_MAP)
 
     return M, rotscal
-
+'''
 img=cv2.imread('C:\\Users\\oldhen\\Pictures\\4.jpg')
 ret = rotate_and_scale(img,0,scale=0.5)
 print(img.shape,ret[1].shape)
 cv2.imwrite('t5.jpg',ret[1])
+'''
+
+def func(x):
+    x-=1
+
+x = 10
+func(x)
+print(x)

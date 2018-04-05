@@ -76,8 +76,8 @@ train_para = {
     'save_freq':20000,
     'show_lr_freq': 500,
     'show_loss_freq': 50,
-    'lr_decay_steps': 100000,
-    'lr_decay_rate': 0.5,
+    'lr_decay_steps': 500000,
+    'lr_decay_rate': 0.1,
     'init_lr': 2e-4,
     'is_train': True,
     'epoch':50

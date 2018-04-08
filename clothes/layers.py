@@ -270,7 +270,7 @@ def conv_block_new(input,
         'center': True,
         'scale': True,
         'epsilon': 1e-3
-    }
+    } if do_normalization==True else None
     activation_fn = tf.nn.relu if do_relu == True else None
     output = tf.contrib.layers.conv2d(
         input,
@@ -281,7 +281,6 @@ def conv_block_new(input,
         normalizer_fn=norm_fn,
         normalizer_params=norm_paras
     )
-
     return output
 
 

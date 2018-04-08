@@ -35,12 +35,8 @@ class HourglassModel():
                 theta = res18_loc(input)
                 input = tf.contrib.image.transform(input, theta, 'BILINEAR')
 
-            conv1 = conv_block_new(
-                input,
-                self.output_features // 4,
-                7,
-                2,
-                'conv1')
+            conv1 = conv_block_new(input, self.output_features // 4, 7, 2,
+                                   'conv1')
             #tf.summary.histogram('conv1',conv1)
             res1 = residual_block(
                 conv1, self.output_features // 2, name='res1')
@@ -71,12 +67,6 @@ class HourglassModel():
                         do_normalization=False,
                         do_relu=False)
                     tf.summary.histogram('inter_output', inter_output)
-                    for i in range(inter_output.get_shape()[-1]):
-                        pred_heatmap0 = tf.expand_dims(
-                            inter_output[0, :, :, i], -1)
-                        pred_heatmap0 = tf.expand_dims(pred_heatmap0, 0)
-                        tf.summary.image(
-                            'pre_heatmaps0', pred_heatmap0, max_outputs=24)
 
                     self.output.append(inter_output)
                     if i != self.stack_number - 1:
@@ -106,11 +96,6 @@ class HourglassModel():
     #计算损失
     def loss_calculate(self, gt_heatmaps):
         with tf.variable_scope('Loss'):
-            #真实heatmaps
-            for i in range(gt_heatmaps.get_shape()[-1]):
-                gt_heatmap0 = tf.expand_dims(gt_heatmaps[0, :, :, i], -1)
-                gt_heatmap0 = tf.expand_dims(gt_heatmap0, 0)
-                tf.summary.image('gt_heatmaps0', gt_heatmap0, max_outputs=24)
             #for i,output in enumerate(self.output):
             for i in range(len(self.output)):
                 loss = tf.losses.mean_squared_error(gt_heatmaps,
@@ -123,6 +108,26 @@ class HourglassModel():
             total_loss = tf.add_n(self.loss, 'Total_loss')
             tf.summary.scalar(total_loss.op.name, total_loss)
 
+            return total_loss
+
+    def loss_calculate_cr(self, ground_truth):
+        with tf.variable_scope('Loss'):
+            for elem in self.output:
+                with tf.variable_scope('classification_loss'):
+                    loss_c = tf.reduce_sum(
+                        tf.nn.sigmoid_cross_entropy_with_logits(
+                            ground_truth[:, :, :, 0], elem[:, :, :, 0]))
+                with tf.variable_scope('regression_loss'):
+                    loss_r = tf.losses.huber_loss(ground_truth[:, :, :, 1:],
+                                                  elem[:, :, :, 1:])
+
+                loss = loss_c * 4 + loss_r
+                self.loss.append(loss)
+                tf.summary.scalar(loss.op.name, loss)
+
+            total_loss = tf.add_n(self.loss, 'Total_loss')
+            tf.summary.scalar(total_loss.op.name, total_loss)
+        
             return total_loss
 
     def hourglass(self, input, stage):

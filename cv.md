@@ -494,3 +494,7 @@ tf.contrib.image.transform(
       https://arxiv.org/pdf/1603.05027.pdf
       by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
       用后面这个效果更好。
+    
+2018.04.08
+1、cv2.BlurGaussian(src,size,sigmaX),对一张图片做高斯模糊。注意，size必须为奇数。
+2、cv2.resize()不限制通道数。

@@ -5,6 +5,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import sys
+import scipy
 #import argparse  #用以解析运行时的参数
 #from clothes_data_generate import *
 from hourglass_orgin import HourglassModel
@@ -13,7 +14,7 @@ from params_clothes import *
 
 def train(category,csv_file):
     #限制使用一个gpu
-    os.environ["CUDA_VISIBLE_DEVICES"]='1'
+    os.environ["CUDA_VISIBLE_DEVICES"]='0'
     gpu_options = tf.GPUOptions(allow_growth=True)
     run_metadata=tf.RunMetadata()
     run_options=tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
@@ -26,18 +27,20 @@ def train(category,csv_file):
         #源csv文件
         with open(csv_file,'r') as f:
             file_list=f.readlines()[1:]
+            if category!='full':
+                file_list=[elem for elem in file_list if category in elem]
         gen=clothes_batch_generater()
         #生成generator
-        batch=gen.generate_batch(category,file_list,2,8,train_para['batch_size'])
+        batch=gen.generate_batch(category,file_list,1,8,train_para['batch_size'])
 
         #为了之后test能够喂进不同的数据
         #image
         x=tf.placeholder(tf.float32,shape=[train_para['batch_size'],256,256,3],name='input')
         #label
         y=tf.placeholder(tf.float32,
-        shape=[train_para['batch_size'],64,64,len(categories_dict[category])],name='gt_heatmaps')
+        shape=[train_para['batch_size'],64,64,len(categories_dict['full'])],name='gt_heatmaps')
         #Model
-        model = HourglassModel(len(categories_dict[category]))
+        model = HourglassModel(len(categories_dict['full']))
         #构建网络
         output=model.build_model(x)
         #loss计算
@@ -52,6 +55,24 @@ def train(category,csv_file):
             decay_rate=train_para['lr_decay_rate'],staircase=True)
         opt = tf.train.AdamOptimizer(lr)
         train_op = opt.minimize(loss, global_step=global_step)
+        #可视化输出和输入
+        with tf.variable_scope('input_image'):
+            tf.summary.image(
+                'input_0', tf.expand_dims(x[0],0), max_outputs=1)
+        with tf.variable_scope('gt_and_pred'):
+            for i in range(output[-1].get_shape()[-1]):
+                #gt
+                gt_heatmap0 = tf.expand_dims(y[0, :, :, i], -1)
+                gt_heatmap0 = tf.expand_dims(gt_heatmap0, 0)
+                #pred
+                pred_heatmap0 = tf.expand_dims(
+                    output[-1][0, :, :, i], -1)
+                pred_heatmap0 = tf.expand_dims(pred_heatmap0, 0)
+
+                tf.summary.image('gt_heatmaps%s'%i, gt_heatmap0, max_outputs=1)
+                tf.summary.image(
+                        'pre_heatmaps%s'%i, pred_heatmap0, max_outputs=1)
+
         merged_op = tf.summary.merge_all()
 
         #writer
@@ -75,14 +96,19 @@ def train(category,csv_file):
             try:
                 #产生对应的batch
                 image_batch,label_batch=next(batch)
-                _, loss_v, summ, step = sess.run(
-                    [train_op, loss, merged_op, global_step],
+                #print(image_batch,label_batch)
+                _, output_final,loss_v, summ, step = sess.run(
+                    [train_op, output[-1],loss, merged_op, global_step],
                     feed_dict={x:image_batch,y:label_batch})#,options=run_options,run_metadata=run_metadata)
                 writer.add_summary(summ, step)
                 #统计内存显存等使用信息
                 #writer.add_run_metadata(run_metadata,'step %d'%step)
                 if (step % train_para['show_loss_freq']) == 0:
                     print('Iteration %d\t Loss %.3e' % (step, loss_v))
+                    scipy.misc.imsave('.//outimg//image0.png',image_batch[0])
+                    for i in range(output_final.shape[-1]):
+                            scipy.misc.imsave('.//outimg//pre_4%d.png'%i,output_final[0,:,:,i])
+                            scipy.misc.imsave('.//outimg//gt%d.png'%i,label_batch[0,:,:,i])
 
                 if (step % train_para['show_lr_freq']) == 0:
                     print('Current lr:', sess.run(lr))
@@ -123,7 +149,7 @@ def main():
         train(cat)
     '''
     
-    train('full',dir_para['train_data_dir']+'/Annotations/train.csv')
+    train('skirt',dir_para['train_data_dir']+'/Annotations/train.csv')
     
     #train('blouse')
     #train('full')

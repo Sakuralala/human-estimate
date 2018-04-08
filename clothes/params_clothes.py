@@ -100,4 +100,4 @@ dir_para = {
     'D:\\clothes\\tianchi\\fashionAI_key_points_test_a_20180227\\test'
 }
 
-thred=1e-3
+thred=1e-2

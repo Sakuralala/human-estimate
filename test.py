@@ -46,9 +46,14 @@ print(img.shape,ret[1].shape)
 cv2.imwrite('t5.jpg',ret[1])
 '''
 
+'''
+#传参测试
 def func(x):
     x-=1
 
 x = 10
 func(x)
 print(x)
+'''
+
+print(type(b'shit'))

@@ -29,6 +29,19 @@ def coor_translate_np(coor, old_size, new_size):
     return np.round(new_coor).astype(np.int)
 
 
+def augment(image):
+    image1 = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    random_bright = .3 + np.random.uniform()
+    random_hue = .2 + np.random.uniform()
+    image1[:, :, 2] = image1[:, :, 2] * random_bright
+    image1[:, :, 1] = image1[:, :, 1] * random_hue
+    image1 = cv2.cvtColor(image1, cv2.COLOR_HSV2RGB)
+    size = np.random.randint(1, 10)
+    if size % 2:
+        image1 = cv2.GaussianBlur(image1, (size, size), 0)
+    return image1
+
+
 def rotate_and_scale(image, angle, center=None, scale=1.0):
     '''
     desc:对图像进行旋转和scale操作，返回对应的转换矩阵和转换后的图像
@@ -44,7 +57,8 @@ def rotate_and_scale(image, angle, center=None, scale=1.0):
 
     return M, rotscal
 
-def _get_rel(kpt_coor,image_size):
+
+def _get_rel(kpt_coor, image_size):
     '''
     desc:用以生成maps的辅助函数,用以取得每个图片的每个像素点的位置相对关键点坐标的偏移。
     '''
@@ -62,7 +76,8 @@ def _get_rel(kpt_coor,image_size):
     x_rel = x_t - kpt_coor[:, 0]
     y_rel = y_t - kpt_coor[:, 1]
 
-    return x_rel,y_rel
+    return x_rel, y_rel
+
 
 def make_gt_heatmaps(kpt_coor, image_size, sigma, mask):
     '''
@@ -73,7 +88,7 @@ def make_gt_heatmaps(kpt_coor, image_size, sigma, mask):
         sigma:方差
         mask:表示对应关键点是否被遮挡
     '''
-    x_rel,y_rel=_get_rel(kpt_coor,image_size)
+    x_rel, y_rel = _get_rel(kpt_coor, image_size)
     #(x-u)**2+(y-v)**2
     #[h,w,kpt_num]
     distance = np.square(x_rel) + np.square(y_rel)
@@ -95,22 +110,22 @@ def make_probmaps_and_offset(kpt_coor, image_size, radius, mask):
         radius:半径。
         mask:遮挡及不存在的点的掩码。
     '''
-    x_rel,y_rel=_get_rel(kpt_coor,image_size)
+    x_rel, y_rel = _get_rel(kpt_coor, image_size)
     distance = np.square(x_rel) + np.square(y_rel)
     #[h,w,kpt_num]
-    probmaps=np.where(distance<=radius**2,1,0)*mask
+    probmaps = np.where(distance <= radius**2, 1, 0) * mask
 
     #在半径外的像素点的x和y的相对坐标全置为零
     #取-是表示从各个像素点位置指向关键点的向量
-    x_rel,y_rel=-x_rel*probmaps,-y_rel*probmaps
+    x_rel, y_rel = -x_rel * probmaps, -y_rel * probmaps
     #[h,w,kpt_num,2]
-    offset=np.stack([y_rel,x_rel],-1)*mask
+    offset = np.stack([y_rel, x_rel], -1) * mask
     #完整的真实标签
-    total=np.concatenate((np.expand_dims(probmaps,-1),offset),-1)
+    total = np.concatenate((np.expand_dims(probmaps, -1), offset), -1)
 
-    return probmaps,offset
+    return probmaps, offset
 
-    
+
 #用这个的话产生的event文件就太大了。。。。。
 def variable_summaries(var):
     '''

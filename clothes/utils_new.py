@@ -30,6 +30,11 @@ def coor_translate_np(coor, old_size, new_size):
 
 
 def augment(image):
+    '''
+    desc:对原始图片进行一些hue和brightness的增强
+    args:
+        image:输入的图片
+    '''
     image1 = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
     random_bright = .3 + np.random.uniform()
     random_hue = .2 + np.random.uniform()
@@ -45,6 +50,11 @@ def augment(image):
 def rotate_and_scale(image, angle, center=None, scale=1.0):
     '''
     desc:对图像进行旋转和scale操作，返回对应的转换矩阵和转换后的图像
+    args:
+        image:输入的图片
+        angle:旋转的角度
+        center:旋转中心
+        scale:放缩尺寸
     '''
     (h, w) = image.shape[:2]
     # 若未指定旋转中心，则将图像中心设为旋转中心
@@ -61,6 +71,9 @@ def rotate_and_scale(image, angle, center=None, scale=1.0):
 def _get_rel(kpt_coor, image_size):
     '''
     desc:用以生成maps的辅助函数,用以取得每个图片的每个像素点的位置相对关键点坐标的偏移。
+    args:
+        kpt_coor:输入的坐标,先x后y
+        image_size:图片大小
     '''
     kpt_num = kpt_coor.shape[0]
     kpt_coor = kpt_coor.astype(np.int)
@@ -103,7 +116,7 @@ def make_gt_heatmaps(kpt_coor, image_size, sigma, mask):
 
 def make_probmaps_and_offset(kpt_coor, image_size, radius, mask):
     '''
-    desc:产生以关键点坐标为圆心，半径为r范围内值为1其他点的值为0的probmaps。
+    desc:产生以关键点坐标为圆心，半径为r范围内值为1其他点的值为0的probmaps,以及对应的offset vector。
     args:
         kpt_coor:关键点坐标，先x后y。
         image_size:图片大小。

@@ -11,7 +11,6 @@ import sys
 class clothes_batch_generater():
     def __init__(
             self,
-            sigma=1.0,
             resized_height=256,
             resized_width=256,
             #is_resize=True,#必须要resize 因为无法保证每张图片的大小是一致的
@@ -22,24 +21,25 @@ class clothes_batch_generater():
             resized_height:裁剪后的图像高
             resized_width:裁剪后的图像宽
             sigma:二维高斯核的方差
-	        coor_noise:是否在关节点的位置上加上一定噪声
-	        crop_center_noise:是否在crop图像的中心加上一定噪声
         '''
-        self.sigma = sigma
         self.resized_size = np.stack([resized_height, resized_width])
 
-    def generate_batch(self,
-                       category,
-                       file_list,
-                       slavers=10,
-                       max_queue_size=16,
-                       batch_size=8):
+    def generate_batch(
+            self,
+            category,
+            file_list,
+            slavers=10,
+            max_queue_size=16,
+            sigma=1.0,
+            batch_size=12,
+    ):
         '''
         desc：生成batch
         args:
             input_size:总的输入数量
             slavers:线程数量
             batch_size:。。。
+            sigma:高斯分布的标准差
         '''
         try:
             di = DataIterator(category, file_list, batch_size=batch_size)
@@ -62,7 +62,7 @@ class clothes_batch_generater():
 
 #数据的预处理及batch生成
 class DataIterator():
-    def __init__(self, category, file_list, batch_size=12, coor_noise=True):
+    def __init__(self, category, file_list, batch_size=12, sigma=1.0):
         '''
         desc:因为win下generator不能被pickle所以只能改成使用iterator了
         args:
@@ -79,7 +79,7 @@ class DataIterator():
         self.cur_index = self.input_size
         self.perm = None
         self.category = category
-        self.coor_noise = coor_noise
+        self.is_start=True
 
     def _coor_read(self, cat, coor):
         '''
@@ -92,9 +92,9 @@ class DataIterator():
         for i, xyv in enumerate(coor):
             #忽略对应类别没有的关节点
             if xyv[0] == '-':
-                #if all_kpt_list[i] in categories_dict[cat]:
-                #对于相同类别下可能不存在的关节点直接置全零
-                ret.append(np.asarray([0, 0, 0], np.int32))
+                if all_kpt_list[i] in categories_dict[cat]:
+                    #对于相同类别下可能不存在的关节点直接置全零
+                    ret.append(np.asarray([0, 0, 0], np.int32))
             else:
                 #[3]
                 xyv = np.asarray([int(i) for i in xyv.split('_')], np.int)
@@ -114,17 +114,23 @@ class DataIterator():
             img_cat_batch = []
             old_size_batch = []
         if self.cur_index + self.batch_size > self.input_size:
+            if self.is_start==True:
+                self.is_start=False
+            else:
+                #测试时跑完了所有图片
+                if train_para['is_train']==False:
+                    raise ValueError('End.')
+
             self.cur_index = 0
             if train_para['is_train']:
                 self.perm = np.random.permutation(self.input_size)
             else:  #测试时不需要随机打乱
                 self.perm = np.arange(self.input_size)
-        #一个epoch中
+        #一个epoch中取的索引
         index = self.perm[self.cur_index:self.cur_index + self.batch_size]
 
         for i in range(self.batch_size):
-            #每一行
-            row = self.file_list[index[i]].split(',')
+            #-------------------------图片读取及原始尺寸保存及统一resize到同一尺寸---------------------------------#
             img_name = dir_para['train_data_dir'] if train_para[
                 'is_train'] else dir_para['test_data_dir'] + '/' + row[0]
             img = cv2.imread(img_name)
@@ -139,22 +145,24 @@ class DataIterator():
                 image_batch.append(img)
                 old_size_batch.append(old_size)
             else:
+                #-------------------------图片的处理-----------------------------------------------------------#
+                #随机旋转-30到30度
+                angle = np.random.uniform(-30.0, 30.0)
+                scale = np.random.uniform(0.75, 1.25)
+                #[size,h,w,3]
+                ret = rotate_and_scale(img, angle, scale=scale)
+                #对图片的hue、brightness做一些增强处理
+                img = augment(img)
+                img = ret[1].astype(np.float) / 255.0
+                image_batch.append(img)
+                #-------------------------坐标的处理-----------------------------------------------------------#
                 #[k,3]
                 coor_orig = self._coor_read(self.category, row[2:])
                 #[k,3]
                 coor_yx = np.stack([coor_orig[:, 1], coor_orig[:, 0]], 1)
                 coor = coor_translate_np(coor_yx, old_size, self.resized_size)
                 coor_xy = np.stack([coor[:, 1], coor[:, 0]], 1)
-                #随机旋转-30到30度
-                angle = np.random.uniform(-30.0, 30.0)
-                scale = np.random.uniform(0.75, 1.25)
-                #[size,h,w,3]
-                ret = rotate_and_scale(img, angle, scale=scale)
-                img = augment(img)
-                img = ret[1].astype(np.float) / 255.0
-                image_batch.append(img)
-                #仿射变换矩阵
-                #[3,2]
+                #仿射变换矩阵 [3,2]
                 M = np.transpose(ret[0], (1, 0))
                 # [24,3]的坐标修改(转换到齐次坐标系) [x,y,1]
                 coor_3d = np.concatenate(
@@ -176,7 +184,7 @@ class DataIterator():
                 #print(out)
                 coor_trans = np.concatenate(
                     (coor_trans, np.expand_dims(coor_orig[:, 2], 1)), 1)
-                #超出图片范围的
+                #超出图片范围的全置为0
                 coor_trans[out] = 0
                 gt_heatmaps = make_gt_heatmaps(coor_trans[:, 0:2],
                                                self.resized_size, 1.0,

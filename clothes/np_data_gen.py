@@ -24,15 +24,14 @@ class clothes_batch_generater():
         '''
         self.resized_size = np.stack([resized_height, resized_width])
 
-    def generate_batch(
-            self,
-            category,
-            file_list,
-            slavers=10,
-            max_queue_size=16,
-            sigma=1.0,
-            batch_size=12,
-    ):
+    def generate_batch(self,
+                       category,
+                       file_list,
+                       slavers=10,
+                       max_queue_size=16,
+                       sigma=1.0,
+                       batch_size=12,
+                       max_epoch=200):
         '''
         desc：生成batch
         args:
@@ -42,7 +41,11 @@ class clothes_batch_generater():
             sigma:高斯分布的标准差
         '''
         try:
-            di = DataIterator(category, file_list, batch_size=batch_size)
+            di = DataIterator(
+                category,
+                file_list,
+                batch_size=batch_size,
+                max_epoch=max_epoch)
             gen_enq = GeneratorEnqueuer(di)
             #产生了多个slaver并开始工作
             gen_enq.start(slaver=slavers, max_queue_size=max_queue_size)
@@ -54,32 +57,41 @@ class clothes_batch_generater():
                 #能用生成器 表明父进程的这个类实例未被传给子进程？
                 yield batch_output
                 batch_output = None
-        finally:
-            pass
+        except Exception as e:
+            raise e
             #if gen_enq is not None:
             #gen_enq.stop()
 
 
 #数据的预处理及batch生成
 class DataIterator():
-    def __init__(self, category, file_list, batch_size=12, sigma=1.0):
+    def __init__(self,
+                 category,
+                 file_list,
+                 batch_size=12,
+                 sigma=1.0,
+                 max_epoch=200,
+                 is_valid=False):
         '''
         desc:因为win下generator不能被pickle所以只能改成使用iterator了
         args:
-            file_list:从原始csv文件中读取的信息
+            file_list:从csv文件中读取的信息
+            is_valid:是否为验证集
         '''
         #self.input_size=input_size
         self.batch_size = batch_size
         self.resized_size = np.stack(
             [input_para['resized_height'], input_para['resized_width']])
-        #除去第一行
         self.file_list = file_list
         self.input_size = len(self.file_list)
         #为了让每个子进程得到不同的perm顺序，先把cur_index置为最大值好在next更新perm
         self.cur_index = self.input_size
         self.perm = None
         self.category = category
-        self.is_start=True
+        self.is_start = True
+        self.is_valid = is_valid
+        self.epoch = -1
+        self.max_epoch = max_epoch
 
     def _coor_read(self, cat, coor):
         '''
@@ -114,13 +126,17 @@ class DataIterator():
             img_cat_batch = []
             old_size_batch = []
         if self.cur_index + self.batch_size > self.input_size:
-            if self.is_start==True:
-                self.is_start=False
+            if self.is_start == True:
+                self.is_start = False
             else:
                 #测试时跑完了所有图片
-                if train_para['is_train']==False:
-                    raise ValueError('End.')
+                if train_para['is_train'] == False:
+                    raise ValueError('Test finished.')
+                else:
+                    if self.epoch > self.max_epoch:
+                        raise ValueError('Train finished.')
 
+            self.epoch += 1
             self.cur_index = 0
             if train_para['is_train']:
                 self.perm = np.random.permutation(self.input_size)
@@ -131,6 +147,7 @@ class DataIterator():
 
         for i in range(self.batch_size):
             #-------------------------图片读取及原始尺寸保存及统一resize到同一尺寸---------------------------------#
+            row = self.file_list[index[i]].split(',')
             img_name = dir_para['train_data_dir'] if train_para[
                 'is_train'] else dir_para['test_data_dir'] + '/' + row[0]
             img = cv2.imread(img_name)
@@ -145,51 +162,56 @@ class DataIterator():
                 image_batch.append(img)
                 old_size_batch.append(old_size)
             else:
-                #-------------------------图片的处理-----------------------------------------------------------#
-                #随机旋转-30到30度
-                angle = np.random.uniform(-30.0, 30.0)
-                scale = np.random.uniform(0.75, 1.25)
-                #[size,h,w,3]
-                ret = rotate_and_scale(img, angle, scale=scale)
-                #对图片的hue、brightness做一些增强处理
-                img = augment(img)
-                img = ret[1].astype(np.float) / 255.0
-                image_batch.append(img)
-                #-------------------------坐标的处理-----------------------------------------------------------#
-                #[k,3]
+                #resize后坐标的转换
                 coor_orig = self._coor_read(self.category, row[2:])
-                #[k,3]
                 coor_yx = np.stack([coor_orig[:, 1], coor_orig[:, 0]], 1)
                 coor = coor_translate_np(coor_yx, old_size, self.resized_size)
-                coor_xy = np.stack([coor[:, 1], coor[:, 0]], 1)
-                #仿射变换矩阵 [3,2]
-                M = np.transpose(ret[0], (1, 0))
-                # [24,3]的坐标修改(转换到齐次坐标系) [x,y,1]
-                coor_3d = np.concatenate(
-                    (coor_xy, np.expand_dims(np.ones(coor_orig.shape[0]), 1)),
-                    1)
-                coor_3d = coor_3d.astype(np.float)
-                #[24,2]
-                coor_trans = np.matmul(coor_3d, M)
-                coor_trans = np.floor(coor_trans).astype(np.int)
-                #取第0维 即超出图片尺寸范围的索引
-                #np.where(condition),返回的是一个tuple,其中tuple的长度为输入的array的维数，
-                #tuple中的每个elem为一个一维array，其中array中的每个元素代表对应维的索引，结
-                #合各个elem中相同位置的元素则可得到一个完整的索引
-                #此处返回的是超出图片尺寸的第0维的索引
-                out = np.concatenate((np.where(coor_trans > 255)[0],
-                                      np.where(coor_trans < 0)[0]))
-                #unique
-                out = np.unique(out)
-                #print(out)
-                coor_trans = np.concatenate(
-                    (coor_trans, np.expand_dims(coor_orig[:, 2], 1)), 1)
-                #超出图片范围的全置为0
-                coor_trans[out] = 0
-                gt_heatmaps = make_gt_heatmaps(coor_trans[:, 0:2],
-                                               self.resized_size, 1.0,
-                                               coor_trans[:, 2])
-                #缩小到和网络输出相同尺寸 先x后y
+                coor_xy = np.stack([coor[:, 2], coor[:, 0]], 1)
+                if self.is_valid == False:
+                    #-------------------------图片的处理-----------------------------------------------------------#
+                    #随机旋转-30到30度
+                    angle = np.random.uniform(-30.0, 30.0)
+                    scale = np.random.uniform(0.75, 1.25)
+                    #[size,h,w,3]
+                    ret = rotate_and_scale(img, angle, scale=scale)
+                    #对图片的hue、brightness做一些增强处理
+                    img = augment(img)
+                    img = ret[1].astype(np.float) / 255.0
+                    image_batch.append(img)
+                    #-------------------------坐标的处理-----------------------------------------------------------#
+                    #仿射变换矩阵 [3,2]
+                    M = np.transpose(ret[0], (1, 0))
+                    # [24,3]的坐标修改(转换到齐次坐标系) [x,y,1]
+                    coor_3d = np.concatenate(
+                        (coor_xy, np.expand_dims(
+                            np.ones(coor_orig.shape[0]), 1)), 1)
+                    coor_3d = coor_3d.astype(np.float)
+                    #[24,2]
+                    coor_trans = np.matmul(coor_3d, M)
+                    coor_trans = np.floor(coor_trans).astype(np.int)
+                    #取第0维 即超出图片尺寸范围的索引
+                    #np.where(condition),返回的是一个tuple,其中tuple的长度为输入的array的维数，
+                    #tuple中的每个elem为一个一维array，其中array中的每个元素代表对应维的索引，结
+                    #合各个elem中相同位置的元素则可得到一个完整的索引
+                    #此处返回的是超出图片尺寸的第0维的索引
+                    out = np.concatenate((np.where(coor_trans > 255)[0],
+                                          np.where(coor_trans < 0)[0]))
+                    #unique
+                    out = np.unique(out)
+                    #print(out)
+                    coor_trans = np.concatenate(
+                        (coor_trans, np.expand_dims(coor_orig[:, 2], 1)), 1)
+                    #超出图片范围的全置为0
+                    coor_trans[out] = 0
+                    gt_heatmaps = make_gt_heatmaps(coor_trans[:, 0:2],
+                                                   self.resized_size, 1.0,
+                                                   coor_trans[:, 2])
+                else:  #验证集不需要做数据增强
+                    image_batch.append(img)
+                    gt_heatmaps = make_gt_heatmaps(coor_xy,
+                                                   self.resized_size, 1.0,
+                                                   coor_orig[:, 2])
+                    #缩小到和网络输出相同尺寸 先x后y
                 gt_heatmaps = cv2.resize(
                     gt_heatmaps,
                     (self.resized_size[1] // 4, self.resized_size[0] // 4))

@@ -498,3 +498,6 @@ tf.contrib.image.transform(
 2018.04.08
 1、cv2.BlurGaussian(src,size,sigmaX),对一张图片做高斯模糊。注意，size必须为奇数。
 2、cv2.resize()不限制通道数。
+
+2018.04.09
+1、tf.merge(input),指定merge的summary，input为tf.summary.xxx返回的值。

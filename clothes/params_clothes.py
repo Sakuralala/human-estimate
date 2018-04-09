@@ -80,7 +80,7 @@ train_para = {
     'lr_decay_rate': 0.1,
     'init_lr': 2e-4,
     'is_train': True,
-    'epoch':50
+    'epoch':100
 }
 
 #dir

@@ -50,12 +50,15 @@ class GeneratorEnqueuer():
                 except StopIteration:
                     break
                 except Exception as e:
+                    '''
                     import traceback
                     traceback.print_exc()
                     #在队列中加入异常
                     self.queue.put(e)
                     self.stop_event.set()
                     break
+                    '''
+                    raise e
             else:
                 #线程版(TODO,对计算密集型效率极低懒得写了)
                 pass

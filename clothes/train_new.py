@@ -11,12 +11,13 @@ from hourglass_orgin import HourglassModel
 from params_clothes import *
 
 
-def train(category, csv_file):
+def train(category, csv_file, csv_file_val=None):
     '''
     desc:用以进行训练。
     args:
         category:训练的服装类别。
         csv_file:源csv文件。
+        csv_file_val:验证集csv文件。
     '''
     #----------------------------------------session的一些配置--------------------------------------------------------
     #限制使用一个gpu
@@ -40,7 +41,18 @@ def train(category, csv_file):
                 file_list = [elem for elem in file_list if category in elem]
         gen = clothes_batch_generater()
         batch = gen.generate_batch(category, file_list, 1, 8,
-                                   train_para['batch_size'])
+                                   train_para['batch_size'],max_epoch=train_para['epoch'])
+
+        #使用验证集
+        if csv_file_val is not None:
+            with open(csv_file, 'r') as f:
+                file_list_val = f.readlines()[1:]
+                if category != 'full':
+                    file_list_val = [
+                        elem for elem in file_list if category in elem
+                    ]
+            batch_val = gen.generate_batch(category, file_list_val, 1, 8,
+                                           train_para['batch_size'])
 
         #---------------------------------构建模型以及一些参数的设置--------------------------------------------------#
         #image
@@ -48,6 +60,12 @@ def train(category, csv_file):
             tf.float32,
             shape=[train_para['batch_size'], 256, 256, 3],
             name='input')
+
+        x_val = tf.placeholder(
+            tf.float32,
+            shape=[train_para['batch_size'], 256, 256, 3],
+            name='input_val')
+
         #label
         y = tf.placeholder(
             tf.float32,
@@ -56,12 +74,22 @@ def train(category, csv_file):
                 len(categories_dict['full'])
             ],
             name='gt_heatmaps')
+
+        y_val = tf.placeholder(
+            tf.float32,
+            shape=[
+                train_para['batch_size'], 64, 64,
+                len(categories_dict['full'])
+            ],
+            name='gt_heatmaps_val')
         #Model
         model = HourglassModel(len(categories_dict['full']))
         #构建网络
         output = model.build_model(x)
         #loss计算
         loss = model.loss_calculate(y)
+        if csv_file_val is not None:
+            loss_val = model.loss_calculate(y_val,name='Loss_val')
         #全局步数
         global_step = tf.Variable(0, trainable=False, name="global_step")
         #学习率
@@ -112,15 +140,24 @@ def train(category, csv_file):
         #-----------------------------------------------训练的循环--------------------------------------------------#
         while True:
             try:
-                #产生对应的batch
                 image_batch, label_batch = next(batch)
-                #print(image_batch,label_batch)
-                _, output_final, loss_v, summ, step = sess.run(
-                    [train_op, output[-1], loss, merged_op, global_step],
+                _, output_final, loss_v, step = sess.run(
+                    [train_op, output[-1], loss, global_step],
                     feed_dict={
                         x: image_batch,
                         y: label_batch
                     })  #,options=run_options,run_metadata=run_metadata)
+
+                if file_list_val is not None:
+                    image_val_batch, label_val_batch = next(batch_val)
+                    loss_val_v = sess.run(
+                        loss_val,
+                        feed_dict={
+                            x_val: image_val_batch,
+                            y_val: label_val_batch
+                        })
+
+                summ = sess.run(merged_op)
                 writer.add_summary(summ, step)
                 #统计内存显存等使用信息
                 #writer.add_run_metadata(run_metadata,'step %d'%step)

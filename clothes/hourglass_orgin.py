@@ -94,8 +94,8 @@ class HourglassModel():
         return self.output
 
     #计算损失
-    def loss_calculate(self, gt_heatmaps):
-        with tf.variable_scope('Loss'):
+    def loss_calculate(self, gt_heatmaps,name='Loss'):
+        with tf.variable_scope(name):
             #for i,output in enumerate(self.output):
             for i in range(len(self.output)):
                 loss = tf.losses.mean_squared_error(gt_heatmaps,

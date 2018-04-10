@@ -501,3 +501,6 @@ tf.contrib.image.transform(
 
 2018.04.09
 1、tf.merge(input),指定merge的summary，input为tf.summary.xxx返回的值。
+
+2018.04.10
+1、person re-id？

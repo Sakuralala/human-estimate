@@ -96,3 +96,19 @@ deeper cut的进化版，相比于其他的不咋地。
 3、Binarized Convolutional Landmark Localizers for Human Pose Estimation and Face Alignment with Limited Resoures
 目标是在保存性能的情况下减小gpu显存的利用,主要使用的是二值卷积，即权重的值不是1就是-1。
 结论：binary效果相比非binary的不太行(降了大概10多个百分点),但是作者声称可以在单个cpu上实现实时的效果;但是使用它改进的residual module能在减小计算负担的情况下稍微提升测试结果。
+
+
+2018.04.10
+1、Faster-RCNN
+可以看作是RPN+Fast-RCNN,其中RPN用以产生候选区域和概率，用作Fast RCNN的输入。
+    a.RPN的大致流程：
+    ①.输入的图像通过一个cnn(resnet等)提取特征并生成一系列feature maps;
+    ②.在feature maps上做slide操作。具体来说，即对feature map做3*3卷积(不知道这个是干啥，可能是为了再提取一次信息？)。对于一个h\*w的feature map上的每一个像素点均对应有k个不同的anchor(即候选区域，不同的scale和ratio,为什么叫做anchor，本人的理解是这个anchor候选框就像是一个基准一样，后面得到预测的bounding box时是通过这个anchor作为基准再进行相应的线性变换从而得到的和gt bounding box更接近的框,另外，anchor的四个坐标是根据图片的大小预先生成的，基本上可以涵盖各种各样的形状),故对于一张feature map，可以产生h\*w\*k个anchor;
+    ③.分两路，一路用作分类，即对每个anchor进行正负label的判别，产生2k个scores(分为前景和背景，对feature map中的每个像素点而言),故最终的输出为h\*w\*2k,使用的是softmax交叉熵损失(logistic也可);另一路用作回归，对feature map中的每个像素点均产生4k个坐标((x,y,w,h),中心坐标和anchor的宽、高,表示预测的值)，总共为h\*w\*4k。
+        note:关于回归的loss，不是直接计算预测的四个值和真实的差距，而是使用了所谓的parameterizated coor,即学习一种变换t,使得anchor经过变换t后得到的bounding box和gt bounding box差距减小，设真实的变换为t*,则优化的目标就是是学习的变换t和真实的变换t*之间的差距尽可能地小，这里回归部分使用的是smooth_l1_loss。另外，论文中采取的变换为平移(改变x、y)+缩放(改变h、w)，对应的变换公式为：
+        x_pred=t_x\*w_a+x_a,->t_x=(x_pred-x_a)/w_a
+        y_pred=t_y\*h_a+y_a,->t_y=(y_pred-y_a)/h_a
+        w_pred=w_a\*exp(t_w),->t_w=log(w_pred/w_a)
+        h_pred=h_a\*exp(t_h),->t_h=log(h_pred/h_a)
+        其中t=[t_x,t_y,t_w,t_h]即为需要学习的参数。
+    ④.proposal layer。

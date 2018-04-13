@@ -107,11 +107,11 @@ class DataIterator():
             if xyv[0] == '-':
                 if all_kpt_list[i] in categories_dict[cat]:
                     #对于相同类别下可能不存在的关节点直接置全零
-                    ret.append(np.asarray([0, 0, 0], np.int32))
+                    ret.append(np.asarray([0, 0, 0], np.int))
                     cate_index.append(0)
             else:
                 #[3]
-                xyv = np.asarray([int(i) for i in xyv.split('_')], np.int)
+                xyv = np.asarray([int(j) for j in xyv.split('_')], np.int)
                 ret.append(xyv)
                 cate_index.append(1)
         #[k,3]

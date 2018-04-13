@@ -75,7 +75,7 @@ def train(category, csv_file, csv_file_val=None):
         if train_para['using_cg'] == False:
             label_shape = [train_para['batch_size'], 64, 64, length]
         else:
-            label_shape = [train_para['batch_size'], 256, 256, length * 3]
+            label_shape = [train_para['batch_size'], 256, 256, length , 3]
         #label
         y = tf.placeholder(tf.float32, shape=label_shape, name='gt_heatmaps')
         #category index

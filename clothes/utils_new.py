@@ -68,20 +68,31 @@ def rotate_and_scale(image, angle, center=None, scale=1.0):
     return M, rotscal
 
 
-def _get_rel(kpt_coor, image_size):
+def _get_grid(image_size):
     '''
-    desc:用以生成maps的辅助函数,用以取得每个图片的每个像素点的位置相对关键点坐标的偏移。
+    desc:用以生成坐标maps的辅助函数,用以取得每个图片的每个像素点的位置。
     args:
-        kpt_coor:输入的坐标,先x后y
         image_size:图片大小
     '''
-    kpt_num = kpt_coor.shape[0]
-    kpt_coor = kpt_coor.astype(np.int)
     x = np.linspace(0, image_size[1] - 1, image_size[1])
     y = np.linspace(0, image_size[0] - 1, image_size[0])
     y_t, x_t = np.meshgrid(y, x)
     y_t = np.transpose(y_t, (1, 0))
     x_t = np.transpose(x_t, (1, 0))
+
+    return x_t, y_t
+
+
+def _get_rel(kpt_coor, image_size):
+    '''
+    desc:用以生成坐标maps的辅助函数,用以取得每个图片的每个像素点的位置相对关键点位置的偏移。
+    args:
+        image_size:图片大小
+        kpt_coor:关键点坐标 先x后y
+    '''
+    kpt_num = kpt_coor.shape[0]
+    kpt_coor = kpt_coor.astype(np.int)
+    x_t, y_t = _get_grid(image_size)
     #[h,w,kpt_num]
     y_t = np.tile(np.expand_dims(y_t, 2), (1, 1, kpt_num))
     #[h,w,kpt_num]
@@ -134,9 +145,52 @@ def make_probmaps_and_offset(kpt_coor, image_size, radius, mask):
     #[h,w,kpt_num,2]
     offset = np.stack([y_rel, x_rel], -1) * mask
     #完整的真实标签
+    #[h,w,kpt_num,3]
     total = np.concatenate((np.expand_dims(probmaps, -1), offset), -1)
 
     return total
+
+
+def get_locmap(predicted):
+    '''
+    desc:通过预测的概率heatmaps及offset vectors,并通过hough voting的方式来获取最终的关键点定位图。
+    args:
+        predicted:概率heatmaps和offset的合体。
+    '''
+    #[b,h,w,kpt_num]
+    probmaps = predicted[:, :, :, :, 0]
+    #[b,h,w,kpt_num,2]
+    offsets = predicted[:, :, :, :, 1:]
+    size = (predicted.shape[1], predicted.shape[2])
+    x_t, y_t = _get_grid(size)
+    #[h,w,2]
+    pixel_coor = np.stack([y_t, x_t], -1)
+    #[b,h,w,kpt_num,2]            [h,w,1,2]
+    predicted_kpt_coor = offsets + np.expand_dims(pixel_coor, 2)
+    #要返回的图 [b,h,w,n]
+    locmaps = np.zeros(
+        (predicted.shape[0], predicted.shape[1], predicted.shape[2],
+         predicted.shape[3]),
+        dtype=np.float)
+    #暂时就先用循环把
+    for i in range(predicted.shape[1]):
+        for j in range(predicted.shape[2]):
+            #xj+F(xj)-x
+            tmp = predicted_kpt_coor - pixel_coor[i, j]
+            #B(xj+F(xj)-x)  三角核函数
+            #[b,h,w,n]
+            tmp = 1.0 - np.sqrt(
+                np.square(tmp[:, :, :, :, 0]) + np.square(tmp[:, :, :, :, 1]))
+            #超出范围的置0
+            tmp = np.where(tmp >= 0, tmp, 0)
+            #h(xj)*
+            tmp *= probmaps
+            #[b,n] 所有像素点对(i,j)点的投票最终得分
+            tmp = np.sum(tmp, (1, 2))
+            locmaps[:, i, j, :] += tmp
+            tmp = None
+
+    return locmaps
 
 
 #用这个的话产生的event文件就太大了。。。。。

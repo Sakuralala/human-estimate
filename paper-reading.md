@@ -80,6 +80,9 @@ a.网络结构：faster-rcnn+cnn(先扣出单个人再进行关键点定位,具�
     a.对于距离gt keypoint位置小于一定距离R的像素点值均置为1，形成一个圆形;
     b.offset vector，即每个像素点的值为其位置与真实位置的差，是个2-channel向量(personlab中限定了像素点为a中的值为1的)。
     最终生成的heatmap由这两个融合而成，是一种hough transform(霍夫变换)的形式。
+    所谓hough voting:
+    对于图像空间中的任意一个点(x,y)对应于霍夫空间中的一条曲线，然后霍夫空间中的对应曲线上的每一个点都进行+1操作;对图像中每个点都进行上述操作后，最后在霍夫空间中强度最大的一个点就是要找的点(霍夫空间的坐标),再将其映射回原图像空间即可得到对应的形状。
+    然后论文中的bilinear kernel，又被称为Triangular kernel，即三角核函数。一维时的表达式为f(x)=1-|x|,也很容易推出二维时的表达式:g(x,y)=1-sqrt(x\*\*2+y\*\*2)
     
     另外，a、b的生成是使用了atrous conv(空洞卷积)。
     与此同时，相应的损失函数也改了：
@@ -99,16 +102,40 @@ deeper cut的进化版，相比于其他的不咋地。
 
 
 2018.04.10
-1、Faster-RCNN
+1、Faster-RCNN two-stage算法，第一步产生region proposal(RPN网络)，第二步对这些proposal进行分类及回归操作(fast rcnn网络)。
 可以看作是RPN+Fast-RCNN,其中RPN用以产生候选区域和概率，用作Fast RCNN的输入。
     a.RPN的大致流程：
     ①.输入的图像通过一个cnn(resnet等)提取特征并生成一系列feature maps;
-    ②.在feature maps上做slide操作。具体来说，即对feature map做3*3卷积(不知道这个是干啥，可能是为了再提取一次信息？)。对于一个h\*w的feature map上的每一个像素点均对应有k个不同的anchor(即候选区域，不同的scale和ratio,为什么叫做anchor，本人的理解是这个anchor候选框就像是一个基准一样，后面得到预测的bounding box时是通过这个anchor作为基准再进行相应的线性变换从而得到的和gt bounding box更接近的框,另外，anchor的四个坐标是根据图片的大小预先生成的，基本上可以涵盖各种各样的形状),故对于一张feature map，可以产生h\*w\*k个anchor;
+    ②.在feature maps上做slide操作。具体来说，即对feature map做3*3卷积(不知道这个是干啥，可能是为了再提取一次信息、进一步提高reception field？)。对于一个h\*w的feature map上的每一个像素点均对应有k个不同的anchor(即候选区域，不同的scale和ratio,为什么叫做anchor，本人的理解是这个anchor候选框就像是一个基准一样，后面得到预测的bounding box时是通过上一次更新后的anchor作为基准再进行相应的线性变换从而得到的和gt bounding box更接近的框,另外，anchor的四个坐标是根据图片的大小预先生成的，基本上可以涵盖各种各样的形状),故对于一张feature map，可以产生h\*w\*k个anchor;
     ③.分两路，一路用作分类，即对每个anchor进行正负label的判别，产生2k个scores(分为前景和背景，对feature map中的每个像素点而言),故最终的输出为h\*w\*2k,使用的是softmax交叉熵损失(logistic也可);另一路用作回归，对feature map中的每个像素点均产生4k个坐标((x,y,w,h),中心坐标和anchor的宽、高,表示预测的值)，总共为h\*w\*4k。
-        note:关于回归的loss，不是直接计算预测的四个值和真实的差距，而是使用了所谓的parameterizated coor,即学习一种变换t,使得anchor经过变换t后得到的bounding box和gt bounding box差距减小，设真实的变换为t*,则优化的目标就是是学习的变换t和真实的变换t*之间的差距尽可能地小，这里回归部分使用的是smooth_l1_loss。另外，论文中采取的变换为平移(改变x、y)+缩放(改变h、w)，对应的变换公式为：
+        note:关于回归的loss，不是直接计算预测的四个值和真实的差距，而是使用了所谓的parameterizated coor,即学习一种变换t,使得anchor经过变换t后得到的bounding box(也是新的anchor)和gt bounding box差距减小，设真实的变换为t*,则优化的目标就是是学习的变换t和真实的变换t*之间的差距尽可能地小，这里回归部分使用的是smooth_l1_loss。另外，论文中采取的变换为平移(改变x、y)+缩放(改变h、w)，对应的变换公式为：
         x_pred=t_x\*w_a+x_a,->t_x=(x_pred-x_a)/w_a
         y_pred=t_y\*h_a+y_a,->t_y=(y_pred-y_a)/h_a
         w_pred=w_a\*exp(t_w),->t_w=log(w_pred/w_a)
         h_pred=h_a\*exp(t_h),->t_h=log(h_pred/h_a)
         其中t=[t_x,t_y,t_w,t_h]即为需要学习的参数。
-    ④.proposal layer。
+    ④.proposal layer。大致步骤如下：
+        根据t来生成新的anchors；
+        使用分类路的分数大小来对anchor进行排序，取前N个；
+        将anchor坐标映射回原图像进行边界超出判断，剔除超出图像尺寸的anchor；
+        剔除尺寸过小的anchor；
+        进行NMS(非最大值抑制);
+        再次排序，取前x个作为输出(即候选),注意此处输出的是[x1,y1,x2,y2]为左上角和右下角的坐标；
+    RPN部分到此即结束。
+    b.ROI pooling，因为传统的cnn训练好之后输入图片的尺寸必须固定，而在RPN部分生成的proposal尺寸并不固定，传统的解决方法即crop或warp，但会破坏原图的结构，故faster rcnn采用了所谓的roi pooling,接收两个输入，一个是共享conv产生的feature maps，一个是proposals。
+    原理：先将proposal映射回原feature map尺度h\*w，然后将每个proposal垂直和水平分别分为pooled_h份和pooled_w份，并对每一份进行max pooling处理，这样输出的就是固定尺度的proposal了(pooled_h\*pooled_w,注意实际过程中可能不整除，所以在tf中需要自己写一个op,在最新的tensorflow object detection模型中，采用的实现方式是：we use Tensorflow’s “crop and resize” operation which uses bilinear interpolation to resample part of an image onto a fixed sized grid)。
+    c.再次对上一步获取的固定大小的proposals进行分类(和前面不同，是类别分类而不是前后景分类)与回归(和前面相同，为的是进一步生成更精确的坐标)，得到更为精确的坐标和分类结果。
+
+
+    d.实际训练过程：
+        1、在已经训练好的model上，训练RPN网络，对应stage1_rpn_train.pt
+        2、利用步骤1中训练好的RPN网络，收集proposals，对应rpn_test.pt
+        3、第一次训练Fast RCNN网络，对应stage1_fast_rcnn_train.pt
+        4、第二训练RPN网络，对应stage2_rpn_train.pt
+        5、再次利用步骤4中训练好的RPN网络，收集proposals，对应rpn_test.pt
+        6、第二次训练Fast RCNN网络，对应stage2_fast_rcnn_train.pt
+
+2018.04.11
+1、YOLO类 one-stage算法，使用一个cnn框架进行回归和分类。
+    v1:
+

@@ -101,24 +101,28 @@ class DataIterator():
             coor:读取csv文件中的关节点部分
         '''
         ret = []
+        cate_index = []
         for i, xyv in enumerate(coor):
             #忽略对应类别没有的关节点
             if xyv[0] == '-':
                 if all_kpt_list[i] in categories_dict[cat]:
                     #对于相同类别下可能不存在的关节点直接置全零
                     ret.append(np.asarray([0, 0, 0], np.int32))
+                    cate_index.append(0)
             else:
                 #[3]
                 xyv = np.asarray([int(i) for i in xyv.split('_')], np.int)
                 ret.append(xyv)
+                cate_index.append(1)
         #[k,3]
-        return np.asarray(ret)
+        return np.asarray(ret), np.asarray(cate_index)
 
     def next(self):
         '''
         desc:处理好image和label(train)并返回
         '''
         image_batch = []
+        cate_index_batch = []
         if train_para['is_train']:
             label_batch = []
         else:
@@ -148,8 +152,14 @@ class DataIterator():
         for i in range(self.batch_size):
             #-------------------------图片读取及原始尺寸保存及统一resize到同一尺寸---------------------------------#
             row = self.file_list[index[i]].split(',')
-            img_name = dir_para['train_data_dir'] if train_para[
-                'is_train'] else dir_para['test_data_dir'] + '/' + row[0]
+            #cate_index_batch.append(index_dict[row[1]])
+            if train_para['is_train']:
+                if self.is_valid == False:
+                    img_name = dir_para['train_data_dir'] + '/' + row[0]
+                else:
+                    img_name = dir_para['val_data_dir'] + '/' + row[0]
+            else:
+                img_name = dir_para['test_data_dir'] + '/' + row[0]
             img = cv2.imread(img_name)
             #转换为rgb
             img = img[..., ::-1].astype(np.uint8)
@@ -163,10 +173,11 @@ class DataIterator():
                 old_size_batch.append(old_size)
             else:
                 #resize后坐标的转换
-                coor_orig = self._coor_read(self.category, row[2:])
+                coor_orig, cate_index = self._coor_read(self.category, row[2:])
+                cate_index_batch.append(cate_index)
                 coor_yx = np.stack([coor_orig[:, 1], coor_orig[:, 0]], 1)
                 coor = coor_translate_np(coor_yx, old_size, self.resized_size)
-                coor_xy = np.stack([coor[:, 2], coor[:, 0]], 1)
+                coor_xy = np.stack([coor[:, 1], coor[:, 0]], 1)
                 if self.is_valid == False:
                     #-------------------------图片的处理-----------------------------------------------------------#
                     #随机旋转-30到30度
@@ -175,8 +186,8 @@ class DataIterator():
                     #[size,h,w,3]
                     ret = rotate_and_scale(img, angle, scale=scale)
                     #对图片的hue、brightness做一些增强处理
-                    img = augment(img)
-                    img = ret[1].astype(np.float) / 255.0
+                    img = augment(ret[1])
+                    img = img.astype(np.float) / 255.0
                     image_batch.append(img)
                     #-------------------------坐标的处理-----------------------------------------------------------#
                     #仿射变换矩阵 [3,2]
@@ -203,22 +214,34 @@ class DataIterator():
                         (coor_trans, np.expand_dims(coor_orig[:, 2], 1)), 1)
                     #超出图片范围的全置为0
                     coor_trans[out] = 0
-                    gt_heatmaps = make_gt_heatmaps(coor_trans[:, 0:2],
-                                                   self.resized_size, 1.0,
-                                                   coor_trans[:, 2])
+                    if train_para['using_cg'] == False:
+                        gt_heatmaps = make_gt_heatmaps(coor_trans[:, 0:2],
+                                                       self.resized_size, 1.0,
+                                                       coor_trans[:, 2])
+                    else:  #将问题看作分类+回归问题
+                        gt_heatmaps = make_probmaps_and_offset(
+                            coor_trans, self.resized_size,
+                            train_para['radius'], coor_trans[:, 2])
                 else:  #验证集不需要做数据增强
                     image_batch.append(img)
-                    gt_heatmaps = make_gt_heatmaps(coor_xy,
-                                                   self.resized_size, 1.0,
-                                                   coor_orig[:, 2])
+                    if train_para['using_cg'] == False:
+                        gt_heatmaps = make_gt_heatmaps(
+                            coor_xy, self.resized_size, 1.0, coor_orig[:, 2])
+                if train_para['using_cg'] == False:
                     #缩小到和网络输出相同尺寸 先x后y
-                gt_heatmaps = cv2.resize(
-                    gt_heatmaps,
-                    (self.resized_size[1] // 4, self.resized_size[0] // 4))
+                    gt_heatmaps = cv2.resize(
+                        gt_heatmaps,
+                        (self.resized_size[1] // 4, self.resized_size[0] // 4))
                 label_batch.append(gt_heatmaps)
 
         if train_para['is_train']:
-            batch = [np.asarray(image_batch), np.asarray(label_batch)]
+            cate_index_batch = np.reshape(
+                cate_index_batch,
+                (train_para['batch_size'], 1, 1, len(cate_index_batch[0])))
+            batch = [
+                np.asarray(image_batch),
+                np.asarray(label_batch), cate_index_batch
+            ]
         else:
             batch = [
                 image_batch, old_size_batch, img_name_batch, img_cat_batch

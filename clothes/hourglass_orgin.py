@@ -6,7 +6,7 @@ import tensorflow as tf
 
 class HourglassModel():
     def __init__(self,
-                 number_classes,
+                 number_outputs,
                  stack_number=4,
                  stage=4,
                  output_features=256,
@@ -14,7 +14,7 @@ class HourglassModel():
         '''
         desc:hourglass网络结构
         args:
-            number_classes:关键点数量
+            number_outputs:输出的数量
             stack_number:hourglass堆叠的数量
             stage:单个hourglass的阶数
             output_features:residule module输出的特征图数量
@@ -24,7 +24,7 @@ class HourglassModel():
         self.stage = stage
         self.output_features = output_features
         self.name = name
-        self.number_classes = number_classes
+        self.number_outputs = number_outputs
         self.output = []
         self.loss = []
 
@@ -51,7 +51,7 @@ class HourglassModel():
             for i in range(self.stack_number):
                 with tf.variable_scope('hourglass' + str(i + 1)):
                     hourglass = self.hourglass(inter_total, self.stage)
-                    tf.summary.histogram('hourglass%s' % (i + 1), hourglass)
+                    #tf.summary.histogram('hourglass%s' % (i + 1), hourglass)
                     hourglass = residual_block(
                         hourglass, self.output_features, name='res4')
                     #tf.summary.histogram('res4',hourglass)
@@ -60,13 +60,13 @@ class HourglassModel():
                     #tf.summary.histogram('conv1',conv2)
                     inter_output = conv_block_new(
                         conv2,
-                        self.number_classes,
+                        self.number_outputs,
                         1,
                         1,
                         'inter_output',
                         do_normalization=False,
                         do_relu=False)
-                    tf.summary.histogram('inter_output', inter_output)
+                    #tf.summary.histogram('inter_output', inter_output)
 
                     self.output.append(inter_output)
                     if i != self.stack_number - 1:
@@ -94,23 +94,23 @@ class HourglassModel():
         return self.output
 
     #计算损失
-    def loss_calculate(self, gt_heatmaps,name='Loss'):
+    def loss_calculate(self, gt_heatmaps,cate_index,name='Loss'):
         with tf.variable_scope(name):
-            #for i,output in enumerate(self.output):
-            for i in range(len(self.output)):
+            for elem in self.output:
                 loss = tf.losses.mean_squared_error(gt_heatmaps,
-                                                    self.output[i])
+                                                    elem,weights=cate_index,reduction=tf.losses.Reduction.SUM)
                 #loss = tf.nn.l2_loss(self.output[i] - gt_heatmaps,
                 #                      'inter_loss' + str(i + 1)) /train_para['batch_size']
                 #loss=tf.reduce_sum(tf.square(self.output[i],gt_heatmaps))/train_para['batch_size']
                 self.loss.append(loss)
                 tf.summary.scalar(loss.op.name, loss)
             total_loss = tf.add_n(self.loss, 'Total_loss')
-            tf.summary.scalar(total_loss.op.name, total_loss)
+            summ=tf.summary.scalar(total_loss.op.name, total_loss)
+            self.loss=[]
 
-            return total_loss
+            return total_loss,summ
 
-    def loss_calculate_cr(self, ground_truth):
+    def loss_calculate_cr(self, ground_truth,name='cls_reg_loss'):
         with tf.variable_scope('Loss'):
             for elem in self.output:
                 with tf.variable_scope('classification_loss'):
@@ -118,17 +118,20 @@ class HourglassModel():
                         tf.nn.sigmoid_cross_entropy_with_logits(
                             ground_truth[:, :, :, 0], elem[:, :, :, 0]))
                 with tf.variable_scope('regression_loss'):
-                    loss_r = tf.losses.huber_loss(ground_truth[:, :, :, 1:],
-                                                  elem[:, :, :, 1:])
+                    loss_r = tf.losses.huber_loss(
+                        ground_truth[:, :, :, 1:],
+                        elem[:, :, :, 1:],
+                        reduction=tf.losses.Reduction.SUM)/train_para['radius']
 
                 loss = loss_c * 4 + loss_r
                 self.loss.append(loss)
                 tf.summary.scalar(loss.op.name, loss)
-
+            
             total_loss = tf.add_n(self.loss, 'Total_loss')
-            tf.summary.scalar(total_loss.op.name, total_loss)
-        
-            return total_loss
+            summ=tf.summary.scalar(total_loss.op.name, total_loss)
+            self.loss=[]
+
+            return total_loss,summ
 
     def hourglass(self, input, stage):
         if stage < 1:

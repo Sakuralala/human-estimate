@@ -136,7 +136,7 @@ def make_probmaps_and_offset(kpt_coor, image_size, radius, mask):
     #完整的真实标签
     total = np.concatenate((np.expand_dims(probmaps, -1), offset), -1)
 
-    return probmaps, offset
+    return total
 
 
 #用这个的话产生的event文件就太大了。。。。。

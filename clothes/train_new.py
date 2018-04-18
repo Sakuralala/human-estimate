@@ -23,8 +23,8 @@ def train(category, csv_file, csv_file_val=None):
     #限制使用一个gpu
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'
     gpu_options = tf.GPUOptions(allow_growth=True)
-    run_metadata = tf.RunMetadata()
-    run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+    #run_metadata = tf.RunMetadata()
+    #run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
     config = tf.ConfigProto(
         log_device_placement=True,
         allow_soft_placement=True,
@@ -39,12 +39,14 @@ def train(category, csv_file, csv_file_val=None):
             file_list = f.readlines()[1:]
             if category != 'full':
                 file_list = [elem for elem in file_list if category in elem]
-        gen = clothes_batch_generater()
+        gen = clothes_batch_generater(resized_height=input_para['resized_height'],
+                                        resized_width=input_para['resized_width'])
         batch = gen.generate_batch(
             category,
             file_list,
             2,
             16,
+            1.0,
             train_para['batch_size'],
             max_epoch=train_para['epoch'])
 
@@ -68,14 +70,14 @@ def train(category, csv_file, csv_file_val=None):
         #image
         x = tf.placeholder(
             tf.float32,
-            shape=[train_para['batch_size'], 256, 256, 3],
+            shape=[train_para['batch_size'], input_para['resized_height'], input_para['resized_width'], 3],
             name='input')
 
         length = len(categories_dict[category])
-        if train_para['using_cg'] == False:
-            label_shape = [train_para['batch_size'], 64, 64, length]
+        if train_para['using_cg']==False:
+            label_shape = [train_para['batch_size'], input_para['resized_height']/4, input_para['resized_width']/4, length]
         else:
-            label_shape = [train_para['batch_size'], 256, 256, length , 3]
+            label_shape = [train_para['batch_size'], input_para['resized_height'], input_para['resized_width'], length * 3]
         #label
         y = tf.placeholder(tf.float32, shape=label_shape, name='gt_heatmaps')
         #category index
@@ -104,7 +106,7 @@ def train(category, csv_file, csv_file_val=None):
         output = model.build_model(x)
         #loss计算 后一个返回的是summary 对训练集无用
         loss, _ = model.loss_calculate(y, z) if train_para[
-            'using_cg'] == False else model.loss_calculate_cr(y)
+            'using_cg'] == False else model.loss_calculate_cr(y,z)
         #全局步数
         global_step = tf.Variable(0, trainable=False, name="global_step")
         #学习率
@@ -122,7 +124,7 @@ def train(category, csv_file, csv_file_val=None):
         with tf.variable_scope('input_image'):
             tf.summary.image('input_0', tf.expand_dims(x[0], 0), max_outputs=1)
         with tf.variable_scope('gt_and_pred'):
-            for i in range(output[-1].get_shape()[-1]):
+            for i in range(output[-1].get_shape()[-1]//3):
                 #gt
                 gt_heatmap0 = tf.expand_dims(y[0, :, :, i], -1)
                 gt_heatmap0 = tf.expand_dims(gt_heatmap0, 0)
@@ -134,7 +136,6 @@ def train(category, csv_file, csv_file_val=None):
                     'gt_heatmaps%s' % i, gt_heatmap0, max_outputs=1)
                 tf.summary.image(
                     'pre_heatmaps%s' % i, pred_heatmap0, max_outputs=1)
-
         '''
         merged_op = tf.summary.merge_all()
 
@@ -162,21 +163,31 @@ def train(category, csv_file, csv_file_val=None):
 
         step = sess.run(global_step)
         #-----------------------------------------------训练的循环--------------------------------------------------#
+        best_loss=5.0
         while True:
             try:
-                image_batch, label_batch,cate_index_batch = next(batch)
+                image_batch, label_batch,cate_index_batch,cate_batch = next(batch)
                 _, loss_v, summ, step = sess.run(
                     [train_op, loss, merged_op, global_step],
                     feed_dict={
                         x: image_batch,
-                        y: label_batch,
-                        z:cate_index_batch
+                        y: label_batch
+                        #z:cate_index_batch
                     })  #,options=run_options,run_metadata=run_metadata)
 
+                #TODO ne计算
+
                 writer.add_summary(summ, step)
+                if loss_v<best_loss:
+                    best_loss=loss_v
+                    saver.save(
+                        sess,
+                        "%s/best_model" % dir_para['trained_model_dir'],global_step=step)
+                    print('Saved best model,step %s,loss=%s'%(step,loss_v))
+                    sys.stdout.flush()
 
                 if csv_file_val is not None:
-                    image_val_batch, label_val_batch,ci_val_batch = next(batch_val)
+                    image_val_batch, label_val_batch,ci_val_batch= next(batch_val)
                     loss_val_v, summ_val_v = sess.run(
                         [loss_val, summ_val_op],
                         feed_dict={
@@ -185,6 +196,7 @@ def train(category, csv_file, csv_file_val=None):
                             z_val:ci_val_batch
                         })
                     writer.add_summary(summ_val_v, step)
+                
                 #统计内存显存等使用信息
                 #writer.add_run_metadata(run_metadata,'step %d'%step)
                 if (step % train_para['show_loss_freq']) == 0:

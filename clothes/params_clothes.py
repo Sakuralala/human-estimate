@@ -81,7 +81,7 @@ input_para = {
     'train_num': 31631,
     'test_num': 9996,
     'resized_height': 256,
-    'resized_width': 256
+    'resized_width':256 
 }
 
 #layers
@@ -96,16 +96,16 @@ layer_para = {
 train_para = {
     'batch_size': 12,
     'max_iter': 400000,
-    'save_freq': 20000,
+    'save_freq': 10000,
     'show_lr_freq': 500,
     'show_loss_freq': 50,
     'lr_decay_steps': 500000,
     'lr_decay_rate': 0.1,
-    'init_lr': 2e-4,
-    'is_train': True,
+    'init_lr': 2e-5,
+    'is_train':True,
     'using_cg': False,  #是否使用分类回归损失，false表示使用gaussian map损失
-    'radius': 32,  #使用分类回归损失时概率圆的半径
-    'epoch': 100
+    'radius': 24,  #使用分类回归损失时概率圆的半径
+    'epoch': 200
 }
 
 #dir
@@ -122,7 +122,9 @@ dir_para = {
     'train_data_dir':
     'D:\\clothes\\tianchi\\fashionAI_key_points_train_20180227\\train',
     'test_data_dir':
-    'D:\\clothes\\tianchi\\fashionAI_key_points_test_a_20180227\\test'
+    'D:\\clothes\\tianchi\\fashionAI_key_points_test_a_20180227\\test',
+    'val_data_dir':
+    'D:\\clothes\\tianchi\\val\\train'
 }
 
-thred = 1e-2
+thred = 1e-3

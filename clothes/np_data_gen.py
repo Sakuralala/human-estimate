@@ -45,6 +45,7 @@ class clothes_batch_generater():
                 category,
                 file_list,
                 batch_size=batch_size,
+                sigma=sigma,
                 max_epoch=max_epoch)
             gen_enq = GeneratorEnqueuer(di)
             #产生了多个slaver并开始工作
@@ -92,6 +93,7 @@ class DataIterator():
         self.is_valid = is_valid
         self.epoch = -1
         self.max_epoch = max_epoch
+        self.sigma=sigma
 
     def _coor_read(self, cat, coor):
         '''
@@ -107,7 +109,7 @@ class DataIterator():
             if xyv[0] == '-':
                 if all_kpt_list[i] in categories_dict[cat]:
                     #对于相同类别下可能不存在的关节点直接置全零
-                    ret.append(np.asarray([0, 0, 0], np.int))
+                    ret.append(np.asarray([-1, -1, 0], np.int))
                     cate_index.append(0)
             else:
                 #[3]
@@ -122,12 +124,12 @@ class DataIterator():
         desc:处理好image和label(train)并返回
         '''
         image_batch = []
+        img_cat_batch = []
         cate_index_batch = []
         if train_para['is_train']:
             label_batch = []
         else:
             img_name_batch = []
-            img_cat_batch = []
             old_size_batch = []
         if self.cur_index + self.batch_size > self.input_size:
             if self.is_start == True:
@@ -154,29 +156,67 @@ class DataIterator():
             row = self.file_list[index[i]].split(',')
             #cate_index_batch.append(index_dict[row[1]])
             if train_para['is_train']:
-                if self.is_valid == False:
-                    img_name = dir_para['train_data_dir'] + '/' + row[0]
+                if self.is_valid==False:
+                    img_name = dir_para['train_data_dir'] +'/'+row[0]
                 else:
-                    img_name = dir_para['val_data_dir'] + '/' + row[0]
+                    img_name = dir_para['val_data_dir']+'/'+row[0] 
             else:
-                img_name = dir_para['test_data_dir'] + '/' + row[0]
+                img_name=dir_para['test_data_dir']+'/'+row[0]
             img = cv2.imread(img_name)
             #转换为rgb
             img = img[..., ::-1].astype(np.uint8)
             old_size = np.stack([img.shape[0], img.shape[1]])
-            #dsize默认为先x后y
-            img = cv2.resize(img, (self.resized_size[1], self.resized_size[0]))
+            #crop操作
+            if train_para['is_train']:
+                coor_orig, cate_index = self._coor_read(self.category, row[2:])
+                cate_index_batch.append(cate_index)
+                indices=np.where(coor_orig[:,0]!=-1)
+                #属于对应类别的坐标 [k,2]
+                coor_cate=coor_orig[indices[0],0:2]
+                #print(coor_cate.shape)
+                #找到左上角坐标和右下角坐标 先x后y的
+                right_bottom=np.max(coor_cate,0)
+                left_up=np.min(coor_cate,0)
+                #把图片往四周扩展1.2倍(实际中可能小于1.2)
+                wh=(right_bottom-left_up)*1.2
+                #源crop图的中心
+                center=(right_bottom+left_up)/2
+                #算出扩展后的左上角和右下角(不能超过原图尺寸范围，故有可能扩展倍数小于1.2)
+                right_bottom=np.floor(np.minimum(center+wh/2,old_size[::-1])).astype(np.int)
+                left_up=np.floor(np.maximum(center-wh/2,[0.0,0.0])).astype(np.int)
+                #重新计算一边center
+                center=np.floor((right_bottom+left_up)/2).astype(np.int)
+                #把crop后的图片扣出来
+                img_crop=img[left_up[1]:right_bottom[1],left_up[0]:right_bottom[0]]
+                '''
+                if left_up[1]>=right_bottom[1] or left_up[0]>=right_bottom[0]:
+                    print(left_up)
+                    print(right_bottom)
+                    print(img_name)
+                '''
+                #cv2.imshow('shit',img_crop)
+                #cv2.waitKey()
+                #crop后的图片的中心坐标 注意先x后y
+                new_center=np.floor([img_crop.shape[1]/2,img_crop.shape[0]/2]).astype(np.int)
+                #转换为crop图中的坐标
+                coor_orig[indices[0],0:2]=coor_orig[indices[0],0:2]-center+new_center
+                #被裁减后的图片大小
+                old_size=np.stack([img_crop.shape[0],img_crop.shape[1]])
+                img=cv2.resize(img_crop,(self.resized_size[1],self.resized_size[0]))
+            else:
+                #dsize默认为先x后y
+                img = cv2.resize(img, (self.resized_size[1], self.resized_size[0]))
+
+            img_cat_batch.append(row[1])
             if train_para['is_train'] == False:
                 img_name_batch.append(row[0])
-                img_cat_batch.append(row[1])
                 image_batch.append(img)
                 old_size_batch.append(old_size)
             else:
-                #resize后坐标的转换
-                coor_orig, cate_index = self._coor_read(self.category, row[2:])
-                cate_index_batch.append(cate_index)
                 coor_yx = np.stack([coor_orig[:, 1], coor_orig[:, 0]], 1)
                 coor = coor_translate_np(coor_yx, old_size, self.resized_size)
+                #需要将非类别点重新变为[0,0]
+                coor=coor*np.expand_dims(coor_orig[:,2],-1)
                 coor_xy = np.stack([coor[:, 1], coor[:, 0]], 1)
                 if self.is_valid == False:
                     #-------------------------图片的处理-----------------------------------------------------------#
@@ -187,6 +227,7 @@ class DataIterator():
                     ret = rotate_and_scale(img, angle, scale=scale)
                     #对图片的hue、brightness做一些增强处理
                     img = augment(ret[1])
+                    #img=ret[1]
                     img = img.astype(np.float) / 255.0
                     image_batch.append(img)
                     #-------------------------坐标的处理-----------------------------------------------------------#
@@ -200,23 +241,25 @@ class DataIterator():
                     #[24,2]
                     coor_trans = np.matmul(coor_3d, M)
                     coor_trans = np.floor(coor_trans).astype(np.int)
+                    #把非类别点重新变为0
+                    coor_trans=coor_trans*np.expand_dims(coor_orig[:,2],-1)
                     #取第0维 即超出图片尺寸范围的索引
                     #np.where(condition),返回的是一个tuple,其中tuple的长度为输入的array的维数，
                     #tuple中的每个elem为一个一维array，其中array中的每个元素代表对应维的索引，结
                     #合各个elem中相同位置的元素则可得到一个完整的索引
                     #此处返回的是超出图片尺寸的第0维的索引
+                    #TODO 改掉硬编码
                     out = np.concatenate((np.where(coor_trans > 255)[0],
                                           np.where(coor_trans < 0)[0]))
-                    #unique
+                    #unique 超出图片范围的第一维的坐标
                     out = np.unique(out)
-                    #print(out)
                     coor_trans = np.concatenate(
                         (coor_trans, np.expand_dims(coor_orig[:, 2], 1)), 1)
                     #超出图片范围的全置为0
                     coor_trans[out] = 0
                     if train_para['using_cg'] == False:
                         gt_heatmaps = make_gt_heatmaps(coor_trans[:, 0:2],
-                                                       self.resized_size, 1.0,
+                                                       self.resized_size, self.sigma,
                                                        coor_trans[:, 2])
                     else:  #将问题看作分类+回归问题
                         gt_heatmaps = make_probmaps_and_offset(
@@ -226,7 +269,7 @@ class DataIterator():
                     image_batch.append(img)
                     if train_para['using_cg'] == False:
                         gt_heatmaps = make_gt_heatmaps(
-                            coor_xy, self.resized_size, 1.0, coor_orig[:, 2])
+                            coor_xy, self.resized_size, self.sigma, coor_orig[:, 2])
                 if train_para['using_cg'] == False:
                     #缩小到和网络输出相同尺寸 先x后y
                     gt_heatmaps = cv2.resize(
@@ -240,7 +283,9 @@ class DataIterator():
                 (train_para['batch_size'], 1, 1, len(cate_index_batch[0])))
             batch = [
                 np.asarray(image_batch),
-                np.asarray(label_batch), cate_index_batch
+                np.asarray(label_batch), 
+                cate_index_batch,
+                img_cat_batch
             ]
         else:
             batch = [

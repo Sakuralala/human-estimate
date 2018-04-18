@@ -36,13 +36,13 @@ def augment(image):
         image:输入的图片
     '''
     image1 = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-    random_bright = .3 + np.random.uniform()
-    random_hue = .2 + np.random.uniform()
-    image1[:, :, 2] = image1[:, :, 2] * random_bright
-    image1[:, :, 1] = image1[:, :, 1] * random_hue
-    image1 = cv2.cvtColor(image1, cv2.COLOR_HSV2RGB)
-    size = np.random.randint(1, 10)
+    size = np.random.randint(1, 5)
     if size % 2:
+        random_bright = .2 + np.random.uniform(0.6,1.0)
+        random_hue = .2 + np.random.uniform(0.6,1.0)
+        image1[:, :, 2] = image1[:, :, 2] * random_bright
+        image1[:, :, 1] = image1[:, :, 1] * random_hue
+        image1 = cv2.cvtColor(image1, cv2.COLOR_HSV2RGB)
         image1 = cv2.GaussianBlur(image1, (size, size), 0)
     return image1
 
@@ -136,17 +136,20 @@ def make_probmaps_and_offset(kpt_coor, image_size, radius, mask):
     '''
     x_rel, y_rel = _get_rel(kpt_coor, image_size)
     distance = np.square(x_rel) + np.square(y_rel)
-    #[h,w,kpt_num]
+    #[h,w,kpt_num]  不存在/被遮挡的关键点对应的图置为全0
     probmaps = np.where(distance <= radius**2, 1, 0) * mask
 
     #在半径外的像素点的x和y的相对坐标全置为零
     #取-是表示从各个像素点位置指向关键点的向量
-    x_rel, y_rel = -x_rel * probmaps, -y_rel * probmaps
+    x_rel, y_rel = -x_rel, -y_rel
     #[h,w,kpt_num,2]
-    offset = np.stack([y_rel, x_rel], -1) * mask
+    offset = np.stack([y_rel, x_rel], -1) 
+    shape=offset.shape
+    #[h,w,kpt_num*2]
+    offset=np.reshape(offset,(shape[0],shape[1],shape[2]*shape[3]))
     #完整的真实标签
-    #[h,w,kpt_num,3]
-    total = np.concatenate((np.expand_dims(probmaps, -1), offset), -1)
+    #[h,w,kpt_num*3]
+    total = np.concatenate((probmaps, offset), -1)
 
     return total
 
@@ -157,39 +160,59 @@ def get_locmap(predicted):
     args:
         predicted:概率heatmaps和offset的合体。
     '''
+    shape=predicted.shape
     #[b,h,w,kpt_num]
-    probmaps = predicted[:, :, :, :, 0]
-    #[b,h,w,kpt_num,2]
-    offsets = predicted[:, :, :, :, 1:]
-    size = (predicted.shape[1], predicted.shape[2])
+    probmaps = predicted[:, :, :, 0:shape[-1]//3]
+    #[b,h,w,kpt_num*2]
+    offsets = predicted[:, :, :,shape[-1]//3:]
+    size = (shape[1], shape[2])
     x_t, y_t = _get_grid(size)
     #[h,w,2]
     pixel_coor = np.stack([y_t, x_t], -1)
-    #[b,h,w,kpt_num,2]            [h,w,1,2]
-    predicted_kpt_coor = offsets + np.expand_dims(pixel_coor, 2)
-    #要返回的图 [b,h,w,n]
+    #[h,w,kpt_num*2]
+    pixel_coor=np.tile(pixel_coor,(1,1,shape[-1]//3))
+    #[b,h,w,kpt_num*2]            [h,w,kpt_num*2]
+    predicted_kpt_coor = offsets + pixel_coor
+    #要返回的图 [b,h,w,kpt_num]
     locmaps = np.zeros(
-        (predicted.shape[0], predicted.shape[1], predicted.shape[2],
-         predicted.shape[3]),
+        (shape[0], shape[1], shape[2],
+         shape[3]//3),
         dtype=np.float)
+    predicted_kpt_coor=np.expand_dims(np.expand_dims(predicted_kpt_coor,0),0)
+    #[h,w,b,h,w,n]
+    #memory error.........
+    predicted_kpt_coor=np.tile(predicted_kpt_coor,(shape[1],shape[2],1,1,1,1))
+    #[h,w,1,1,1,n]
+    pixel_coor=np.expand_dims(np.expand_dims(np.expand_dims(pixel_coor,2),2),2)
+    #xj+F(xj)-x [h,w,b,h,w,n]
+    tmp=predicted_kpt_coor-pixel_coor
+    #B(xj+F(xj)-x) [h,w,b,h,w,n/2]
+    tmp=1.0-np.sqrt(np.square(tmp[:,:,:,:,:,0::2])+np.square(tmp[:,:,:,:,:,1::2]))
+    tmp=np.where(tmp>=0,tmp,0)
+    #h(xj)*
+    tmp*=probmaps
+    #[b,h,w,n/2]
+    locmaps=np.sum(tmp,(0,1))
     #暂时就先用循环把
+    #循环太慢了。。
+    '''
     for i in range(predicted.shape[1]):
         for j in range(predicted.shape[2]):
-            #xj+F(xj)-x
+            #xj+F(xj)-x [b,h,w,kpt_num*2]
             tmp = predicted_kpt_coor - pixel_coor[i, j]
             #B(xj+F(xj)-x)  三角核函数
-            #[b,h,w,n]
+            #[b,h,w,kpt_num]
             tmp = 1.0 - np.sqrt(
-                np.square(tmp[:, :, :, :, 0]) + np.square(tmp[:, :, :, :, 1]))
+                np.square(tmp[:, :, :, 0::2]) + np.square(tmp[:, :, :, 1::2]))
             #超出范围的置0
             tmp = np.where(tmp >= 0, tmp, 0)
             #h(xj)*
             tmp *= probmaps
-            #[b,n] 所有像素点对(i,j)点的投票最终得分
+            #[b,kpt_num] 所有像素点对(i,j)点的投票最终得分
             tmp = np.sum(tmp, (1, 2))
             locmaps[:, i, j, :] += tmp
             tmp = None
-
+    '''
     return locmaps
 
 

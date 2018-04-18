@@ -89,7 +89,9 @@ a.网络结构：faster-rcnn+cnn(先扣出单个人再进行关键点定位,具�
     对于a而言，使用的损失函数为logistic loss，即经典的二分类损失,计算loss是是对整幅图片尺寸大小进行计算(排除了关键点未完全标记的部分);
     对于b而言，使用的损失函数为L1 loss(personlab)/Huber loss(G-RMI),计算loss时只计算在R范围内的(personlab)并且,除以R以normlize(personlab);
     另外两种loss间存在权重关系。
-
+    Q:
+    1、对于被遮挡的点，probmaps应该为全零还是和未被遮挡的点一致？对于不存在的点，probmaps应该为全零？那么对应的offset应该为什么形式？
+    2、通过probmaps和offsets来得到locmaps时,若使用循环那么速度太慢，但如果使用6维的张量([h,w,b,h,w,n])则会报memory error，所以要怎么办呢？
 b.
 
 

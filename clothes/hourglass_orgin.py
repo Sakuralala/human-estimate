@@ -66,9 +66,14 @@ class HourglassModel():
                         'inter_output',
                         do_normalization=False,
                         do_relu=False)
+                    if train_para['using_cg']:
+                        inter_output2=tf.image.resize_bilinear(inter_output,
+                            [input_para['resized_height'],input_para['resized_width']],align_corners=True)
                     #tf.summary.histogram('inter_output', inter_output)
-
-                    self.output.append(inter_output)
+                        #print(inter_output2.name)
+                        self.output.append(inter_output2)
+                    else:
+                        self.output.append(inter_output)
                     if i != self.stack_number - 1:
                         conv3 = conv_block_new(
                             conv2,
@@ -98,7 +103,7 @@ class HourglassModel():
         with tf.variable_scope(name):
             for elem in self.output:
                 loss = tf.losses.mean_squared_error(gt_heatmaps,
-                                                    elem,weights=cate_index,reduction=tf.losses.Reduction.SUM)
+                                                    elem,reduction=tf.losses.Reduction.SUM)
                 #loss = tf.nn.l2_loss(self.output[i] - gt_heatmaps,
                 #                      'inter_loss' + str(i + 1)) /train_para['batch_size']
                 #loss=tf.reduce_sum(tf.square(self.output[i],gt_heatmaps))/train_para['batch_size']
@@ -110,17 +115,25 @@ class HourglassModel():
 
             return total_loss,summ
 
-    def loss_calculate_cr(self, ground_truth,name='cls_reg_loss'):
+    def loss_calculate_cr(self, ground_truth,cate_index,name='cls_reg_loss'):
         with tf.variable_scope('Loss'):
+            #[b,h,w,24,2] gt的probmaps对于不存在/被遮挡的关键点对应的图置为全零 
+            # 在计算offset的loss时这部分loss没被算进总的loss里
+            #即对于被遮挡/不存在的点probmap应该趋向于全0 且不存在对应的offset
+            weights=tf.stack([ground_truth[:,:,:,0:24],ground_truth[:,:,:,0:24]],-1)
+            shape=weights.get_shape().as_list()
+            #[b,h,w,48]
+            weights=tf.reshape(weights,[shape[0],shape[1],shape[2],shape[3]*shape[4]])
             for elem in self.output:
                 with tf.variable_scope('classification_loss'):
                     loss_c = tf.reduce_sum(
                         tf.nn.sigmoid_cross_entropy_with_logits(
-                            ground_truth[:, :, :, 0], elem[:, :, :, 0]))
+                            labels=ground_truth[:, :, :, 0:24], logits=elem[:, :, :, 0:24]))
                 with tf.variable_scope('regression_loss'):
                     loss_r = tf.losses.huber_loss(
-                        ground_truth[:, :, :, 1:],
-                        elem[:, :, :, 1:],
+                        ground_truth[:, :, :, 24:],
+                        elem[:, :, :, 24:],
+                        weights=weights,
                         reduction=tf.losses.Reduction.SUM)/train_para['radius']
 
                 loss = loss_c * 4 + loss_r

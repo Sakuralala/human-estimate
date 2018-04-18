@@ -504,3 +504,6 @@ tf.contrib.image.transform(
 
 2018.04.10
 1、person re-id？
+
+2018.04.18
+1、cv2读取的图片要进行crop操作，直接进行切片即可，因为存的就是numpy的array。

@@ -17,7 +17,7 @@ def test(category, csv_file):
         csv_file:源文件。
     '''
     #----------------------------------------session的一些配置--------------------------------------------------------
-    os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
     gpu_options = tf.GPUOptions(allow_growth=True)
     config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 
@@ -31,18 +31,23 @@ def test(category, csv_file):
             file_list = f.readlines()[1:]
             if category != 'full':
                 file_list = [elem for elem in file_list if category in elem]
-        gen = clothes_batch_generater(category)
-        batch = gen.generate_batch(category, 1, 8, train_para['batch_size'])
+        
+        gen = clothes_batch_generater()
+        batch = gen.generate_batch(category, file_list,1, 8, batch_size=train_para['batch_size'])
 
         #-------------------------------------读取预训练模型---------------------------------------------------------#
         saver = tf.train.import_meta_graph(
-            dir_para['trained_model_dir'] + '/' + category + '-240000.meta')
+            dir_para['trained_model_dir'] + '/' + 'full'+ '-400000.meta')
         saver.restore(
-            sess, dir_para['trained_model_dir'] + '/' + category + '-240000')
+            sess, dir_para['trained_model_dir'] + '/' + 'full-400000')
         graph = tf.get_default_graph()
         x = graph.get_tensor_by_name('input:0')
-        opt = graph.get_tensor_by_name(
-            'hourglass_model/hourglass4/Conv_1/BiasAdd:0')
+        if train_para['using_cg']==False:
+            opt = graph.get_tensor_by_name(
+                'hourglass_model/hourglass4/Conv_1/BiasAdd:0')
+        else:
+            opt = graph.get_tensor_by_name(
+                'hourglass_model/hourglass4/ResizeBilinear:0')
 
         #--------------------------------------开始测试-------------------------------------------------------------#
         max_idx_dict = {}
@@ -51,10 +56,12 @@ def test(category, csv_file):
                 #------------------------------------获取batch并处理-------------------------------------------------#
                 img, size, image_name, cate = next(batch)
                 predicted_heatmaps_batch = sess.run(opt, feed_dict={x: img})
-                #[total,height,width,kpt_number]
+                if train_para['using_cg']:
+                    predicted_heatmaps_batch=get_locmap(predicted_heatmaps_batch)
                 for i in range(train_para['batch_size']):
                     img_name = image_name[i]
-                    cat = cate[i]
+                    cat = cate[i][:-1]
+
                     img_name2 = img_name.split('/')[-1]
                     name = dir_para['test_data_dir'] + '//' + img_name
 
@@ -87,42 +94,47 @@ def test(category, csv_file):
                         if all_kpt_list[j] in categories_dict[cat]:
                             if coor_j[ind2[j][0], ind2[j][1]] >= thred:
                                 cv2.circle(tmp, (ind2[j][1], ind2[j][0]), 4,
-                                           (255, 0, 0), -2)
-                                #被遮挡的点
-                                ind_str = '0_0_0'
+                                            (128, 0, 255), -2)
+                                ind_str = str(ind2[j][1]) + '_' + str(
+                                    ind2[j][0]) + '_1'
                             else:
-                                ind_str = str(ind[0][i]) + '_' + str(
-                                    ind[1][i]) + '_1'
-                            #找到关节点在csv文件中的对应位置索引
-                            index = all_kpt_list.index(
-                                categories_dict[category][i])
-                            max_idx_list[index] = ind_str
-                    cv2.imwrite('./res/%s' % img_name2, tmp)
-                    max_idx_dict[img_name[0]] = max_idx_list
+                                #被遮挡的点
+                                ind_str = str(ind2[j][1]) + '_' + str(
+                                    ind2[j][0]) + '_0'
+                                cv2.circle(tmp, (ind2[j][1], ind2[j][0]), 4,
+                                            (0, 128, 255), -2)
+                            max_idx_list[j] = ind_str
+                    cv2.imwrite('./res-400000/%s' % img_name2, tmp)
+                    max_idx_dict[img_name] = max_idx_list
 
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 break
 
         return max_idx_dict
 
 
 if __name__ == '__main__':
-    mp.freeze_support()
+    freeze_support()
     #--------------------------------------------解析参数-----------------------------------------------------------#
     parser = argparse.ArgumentParser()
     parser.add_argument('category', type=str, choices=categories)
     args = parser.parse_args()
+    #???这个局部变量不会传给子进程？
     train_para['is_train'] = False
 
-    test(args.category, dir_para['test_data_dir'] + '/Annotations/test.csv')
+    ret=test(args.category, dir_para['test_data_dir'] + '/test.csv')
 
     #---------------------------------------------开始写入----------------------------------------------------------#
+    print('Start to write...........')
     with open('./result.csv', 'a', newline='') as f:
         writer = csv.writer(f)
         for key in ret.keys():
-            res = [key, cat]
+            cate=key.split('/')[1]
+            res = [key, cate]
             #找到图片对应的坐标list
             for elem in ret[key]:
                 res.append(elem)
-            print(res)
+            #print(res)
             writer.writerow(res)

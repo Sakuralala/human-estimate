@@ -141,3 +141,9 @@ deeper cut的进化版，相比于其他的不咋地。
 1、YOLO类 one-stage算法，使用一个cnn框架进行回归和分类。
     v1:
 
+
+
+2018.04.20
+1、Adversarial Complementary Learning for Weakly Supervised Object Localization
+用fcn做分类时最终产生的c个类别的feature maps，研究发现分类任务往往是靠目标类别的某一部分来进行的，即对应的featuremaps只有对应的部分响应较高，这篇文章使用的方法就是强制先把第一个分类器产生的locationmaps的响应部分置0然后扔给第二个分类器强迫它通过别的部分来进行分类，这样最后把两个locationmaps进行max(pixel_a,pixel_b)，即找到每个对应像素位置的最大值来得到整个目标的响应。
+

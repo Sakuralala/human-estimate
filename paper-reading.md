@@ -147,3 +147,16 @@ deeper cut的进化版，相比于其他的不咋地。
 1、Adversarial Complementary Learning for Weakly Supervised Object Localization
 用fcn做分类时最终产生的c个类别的feature maps，研究发现分类任务往往是靠目标类别的某一部分来进行的，即对应的featuremaps只有对应的部分响应较高，这篇文章使用的方法就是强制先把第一个分类器产生的locationmaps的响应部分置0然后扔给第二个分类器强迫它通过别的部分来进行分类，这样最后把两个locationmaps进行max(pixel_a,pixel_b)，即找到每个对应像素位置的最大值来得到整个目标的响应。
 
+2018.04.25
+1、multi-context attention for human pose estimation    
+    基于hourglass结构，有以下三点创新：  
+    a.引入了CRF(条件随机场),注意力机制；  
+    CRF(条件随机场)属于无向图模型，是指给定一组输入随机变量的条件下另一组输出随机变量的条件概率分布模型。图中的节点表示为随机变量，设所有随机变量集合为Y,边表示变量之间的依赖关系，设无向图所表示的联合概率分布为P(Y)。  
+    首先，概率无向图模型中最大团的定义：无向图中任意两个节点间均有边连接的节点子集称为团，若团中无法再加入新的节点，则称对应的团为最大团。若图中节点太多，则联合概率P(Y)可分解为各个最大团的联合概率乘积表示，这个由Hammersly-Clifford law定理保证:  
+    $P(Y)=\frac{1}{Z}\prod_{c}Ψ_{c}(Y_{c})$  
+    $Z=\sum_{Y}\prod_{c}Ψ_{c}(Y_{c})$  
+    其中,$Ψ_{c}(Y_{c})$是c上定义的严格正势函数，一般取指数函数:  
+    $Ψ_{c}(Y_{c})=e^{-E(Y_{c})}$  
+    
+    b.multi-context attention,包括multi-resolution attention、multi-semantics attention、hierarchical visual attention。
+    c.hourglass residual unit(HRU)，专门为hourglass结构设计的残差模块，在原本残差模块的基础上加上了第三条支路，即类似hourglass整体结构的top-down-top结构，这部分相对来说应该比较好理解。

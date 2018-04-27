@@ -160,3 +160,8 @@ deeper cut的进化版，相比于其他的不咋地。
     
     b.multi-context attention,包括multi-resolution attention、multi-semantics attention、hierarchical visual attention。
     c.hourglass residual unit(HRU)，专门为hourglass结构设计的残差模块，在原本残差模块的基础上加上了第三条支路，即类似hourglass整体结构的top-down-top结构，这部分相对来说应该比较好理解。
+
+
+2018.04.27
+1、vnect
+    不仅回归heatmaps，还回归 所谓的location-maps。

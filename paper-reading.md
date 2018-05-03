@@ -182,3 +182,5 @@ end-to-end,two modules，其一为hourglass模块，其二为深度回归模块�
     b.同时使用2d、3d数据集(对半分，随机采样)训练深度回归模块及fine-tune hourglass模块，不使用几何约束损失(即$L_{geo}$);  
     c.fine-tune整个网络，使用$L_{geo}$。  
 
+2018.05.03  
+

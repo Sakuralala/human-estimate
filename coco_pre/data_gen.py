@@ -9,6 +9,9 @@ from utils_new import *
 import sys
 import os
 from ref import *
+#用于测试时的可视化
+import imgaug as ia
+from imgaug import augmenters as iaa
 
 
 #batch生成器
@@ -57,7 +60,12 @@ def batch(ann_dir,
 
 #---------------------------------------------数据预处理类------------------------------------------------------------
 class COCOPreProcess():
-    def __init__(self, ann_dir, img_dir, batch_size=12, max_epoch=200,filter_num=8):
+    def __init__(self,
+                 ann_dir,
+                 img_dir,
+                 batch_size=12,
+                 max_epoch=200,
+                 filter_num=8):
         '''
         description:用于coco数据集人的部分的预处理,包括图片、关节点信息读入及augment,用作关键点检测部分.
         parameters:
@@ -119,7 +127,7 @@ class COCOPreProcess():
         '''
         return self.get_batch(resized_size)
 
-    def get_batch(self, resized_size=(256, 192)):
+    def get_batch(self, resized_size=(192, 256)):
         '''
         description:取得一个预处理好的batch
             流程:
@@ -133,7 +141,7 @@ class COCOPreProcess():
             8.进行对应的坐标转换;
             9.生成batch.
         parameters:
-            resized_size: tuple
+            resized_size: tuple (width,height)
                 统一resize的图片大小
         return: list
             一个batch
@@ -143,6 +151,7 @@ class COCOPreProcess():
         ann_info = self._load_ann_info()
         img_batch = []
         kpt_batch = []
+        kpt_img_batch = []
         for ann in ann_info:
             #2 3 4
             bbox = ann['bbox']
@@ -157,11 +166,14 @@ class COCOPreProcess():
             img = cv2.resize(img, resized_size)
             kpt = scale_coords_trans(kpt, np.stack([bbox[2], bbox[3]]),
                                      np.stack(
-                                         [resized_size[1], resized_size[0]]))
+                                         [resized_size[0], resized_size[1]]))
             #7、8 scale、flip、rotate、brightness、blur、hue等.
             img_aug, kpt = augment_both(img, kpt)
             #9
             img_batch.append(img_aug)
+            #测试用
+            kpt_img_batch.append(
+                ia.KeypointsOnImage.from_coords_array(kpt, img_aug.shape))
             kpt_vis = np.concatenate((kpt, vis), -1)
             #找到未标注的点
             indices = np.where(kpt_vis[:, -1] == 0)[0]
@@ -169,7 +181,7 @@ class COCOPreProcess():
             kpt_vis[indices] = 0
             kpt_batch.append(kpt_vis)
 
-        return img_batch, kpt_batch
+        return img_batch, kpt_batch, kpt_img_batch
 
     def _check_cur_index(self):
         '''
@@ -198,7 +210,7 @@ class COCOPreProcess():
         self.cur_index += self.batch_size
         #注意一个image_id可以对应多个ann的id
         ann_ids = self.ann_ids[ann_ids_index]
-        print(ann_ids_index, ann_ids)
+        #print(ann_ids_index, ann_ids)
         ann_info = self.coco.loadAnns(ann_ids)
 
         return ann_info
@@ -224,6 +236,7 @@ class COCOPreProcess():
         imgs = []
         #5
         for i, bbox in enumerate(bboxs):
+            #避免py3中cv2.imread不能读取中文路径的问题
             img = cv2.imdecode(
                 np.fromfile(
                     self.img_dir + img_infos[i]['file_name'], dtype=np.uint8),

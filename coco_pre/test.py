@@ -11,7 +11,8 @@ def main(ann_dir, img_dir):
     batch_gen = batch(ann_dir, img_dir, batch_size=1, slavers=2)
     while True:
         ret = next(batch_gen)
-        cv2.imshow('test',ret[0][0])
+        ann_img = ret[2][0].draw_on_image(ret[0][0], size=7)
+        cv2.imshow('test', ann_img)
         cv2.waitKey()
 
 

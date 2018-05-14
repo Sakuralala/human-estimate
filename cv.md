@@ -140,7 +140,7 @@ tf.nn.batch_normalization
 
 2018.03.02
 1、读取.mat文件,scipy.io.loadmat(),mat文件版本更高的使用hdfs。
-2、numpy.void类型的tmp,要查看各个类型使用tmp.dtype(返回一个dtype对象);各个fields使用tmp.dtype.fields(返回mappingproxy对象);tmp.dtype.fields.keys()返回dict_keys对象,里面包含各个key,若要直接的key列表,使用list(tmp.dtype.fields.keys())。
+2、numpy.void类型的tmp,要查看各个类型使用tmp.dtype(返回一个dtype对象);各个fields使用tmp.dtype.fields(返回mappingproxy对象);tmp.dtype.fields.keys()返回dict_keys对象,里面包含各个key,若要直接的key列表,使用list(tmp.dtype.fields.keys());要取得每个key的数据直接使用tmp[key]来索引。  
 
 2018.03.03
 1、测试时图片的尺寸处理？图片先被crop到256x256,需要先提供人的中心位置的信息？然后再进行预测。

@@ -19,6 +19,7 @@ def batch(ann_dir,
           img_dir,
           batch_size=12,
           max_epoch=200,
+          filter_num=8,
           slavers=10,
           max_queue_size=16):
     '''
@@ -26,6 +27,8 @@ def batch(ann_dir,
     parameters:
         input_size: int 
             总的输入数量
+        filter_num: int 
+            用于除去数据集中标准点太少的人物,表示最少需要被标注的关节点数量
         slavers: int
             线程数量
         max_epoch: int
@@ -34,13 +37,15 @@ def batch(ann_dir,
         返回从队列中取得预处理batch的generator
     '''
     try:
-        cpp = COCOPreProcess(ann_dir, img_dir, batch_size, max_epoch)
+        cpp = COCOPreProcess(
+            ann_dir, img_dir, batch_size, max_epoch, filter_num=filter_num)
         if os.name is 'posix':
             gen = cpp.get_batch_gen()
+        #for fuck windows
         elif os.name is 'nt':
             gen = cpp
         else:
-            raise ValueError('Unknow system.')
+            raise ValueError('Unknown system.')
         gen_enq = GeneratorEnqueuer(gen)
         #产生了多个slaver并开始工作
         gen_enq.start(slaver=slavers, max_queue_size=max_queue_size)
@@ -58,7 +63,7 @@ def batch(ann_dir,
         #gen_enq.stop()
 
 
-#---------------------------------------------数据预处理类------------------------------------------------------------
+#------------------------------------------COCO数据预处理类-----------------------------------------------------------
 class COCOPreProcess():
     def __init__(self,
                  ann_dir,
@@ -79,6 +84,7 @@ class COCOPreProcess():
         self.img_dir = img_dir
         self.cur_index = 0
         self.batch_size = batch_size
+        self.filter_num = filter_num
         #当前的轮数
         self.cur_epoch = 0
         self.max_epoch = max_epoch
@@ -88,9 +94,9 @@ class COCOPreProcess():
         self.ann_ids = self.coco.getAnnIds(catIds=self.cat_ids)
         self.ann_ids = np.asarray([
             ann_id for ann_id in self.ann_ids
-            if self.coco.loadAnns(ann_id)[0]['num_keypoints'] > 0
+            if self.coco.loadAnns(ann_id)[0]['num_keypoints'] > self.filter_num
         ])
-        print(self.ann_ids.shape[0])
+        print('Total person count:', self.ann_ids.shape[0])
         #用于随机产生序列 为了使每个进程得到不同的perm 先置为none
         self.perm = None
 
@@ -110,8 +116,9 @@ class COCOPreProcess():
         '''
         try:
             while True:
-                img_batch, kpt_batch = self.get_batch(resized_size)
-                yield img_batch, kpt_batch
+                img_batch, kpt_batch, kpt_img_batch = self.get_batch(
+                    resized_size)
+                yield img_batch, kpt_batch, kpt_img_batch
         except Exception as e:
             raise e
 

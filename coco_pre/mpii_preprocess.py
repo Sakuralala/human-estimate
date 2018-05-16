@@ -39,14 +39,21 @@ class MPIIPreProcess(DataPreProcess):
         #当前的轮数
         self.cur_epoch = 0
         f = h5.File(h5_dir, 'r')
+        self.id = f['index'][:]
         self.img_name = f['img_name'][:]
+        #需要先decode  因为存的时候先进行了encode
+        '''
+        for name in self.img_name:
+            name = name.decode()
+        '''
+        self.img_name = np.asarray([name.decode() for name in self.img_name])
         self.bbox = f['bbox'][:]
         if self.is_train:
             self.max_epoch = max_epoch
             #用于随机产生序列 为了使每个进程得到不同的perm 先置为none
             self.perm = None
             self.vis = f['visible'][:]
-            self.coords_num = f['coords_num'][:]
+            self.coords_num = f['kpt_num'][:]
             self.coords = f['coords'][:]
         else:
             self.max_epoch = 1
@@ -80,8 +87,7 @@ class MPIIPreProcess(DataPreProcess):
         #1 2
         imgs = self._load_imgs(index)
         #3
-        for img in imgs:
-            img = cv2.resize(img, resized_size)
+        imgs = np.asarray([cv2.resize(img, resized_size) for img in imgs])
         if self.is_train:
             #4
             coords, vis = self._load_coordsvis_info(index)
@@ -90,8 +96,8 @@ class MPIIPreProcess(DataPreProcess):
             #[b,1,2]
             old_size = np.expand_dims(
                 np.stack([
-                    self.bbox[:, 2] - self.bbox[:, 0],
-                    self.bbox[:, 3] - self.bbox[:, 1]
+                    self.bbox[index][:, 2] - self.bbox[index][:, 0],
+                    self.bbox[index][:, 3] - self.bbox[index][:, 1]
                 ], 1), 1)
             coords = scale_coords_trans(
                 coords, old_size, np.stack([resized_size[0], resized_size[1]]))
@@ -101,7 +107,7 @@ class MPIIPreProcess(DataPreProcess):
             coords_img_batch = [
                 ia.KeypointsOnImage.from_coords_array(coords[i],
                                                       imgs_aug[i].shape)
-                for i in self.batch_size
+                for i in range(self.batch_size)
             ]
             coords_vis = np.concatenate((coords, vis), -1)
             #找到未标注的点
@@ -125,14 +131,19 @@ class MPIIPreProcess(DataPreProcess):
             imgs
         '''
         bboxs = self.bbox[index]
+        bboxs = bboxs.astype(np.int)
         imgs = [
             cv2.imdecode(
                 np.fromfile(self.img_dir + name, dtype=np.uint8),
                 cv2.IMREAD_COLOR)[..., ::-1] for name in self.img_name[index]
         ]
         for i in range(self.batch_size):
-            imgs[i] = imgs[i][bboxs[i][1]:bboxs[i][3], bboxs[i][0]:bboxs[i][2]]
-
+            imgs[i] = imgs[i][bboxs[i, 1]:bboxs[i, 3], bboxs[i, 0]:bboxs[i, 2]]
+            if imgs[i].shape[0] <= 0 or imgs[i].shape[1] <= 0:
+                print('id:', self.id[index][i], 'name:',
+                      self.img_name[index][i])
+                print('x1 y1 x2 y2:', bboxs[i])
+                raise ValueError('Image shape error.')
         return imgs
 
     def _load_coordsvis_info(self, index):

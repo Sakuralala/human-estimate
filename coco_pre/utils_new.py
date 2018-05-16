@@ -26,11 +26,20 @@ def augment_both(img, coords, prob=0.5):
             关键点坐标,[n,2]的array或[b,n,2]
         prob: float
             做某一项augment的概率
-    return: tuple
+    return: tuple of list
         增强后的imgs和转换后的coords的tuple
     '''
     sometimes = lambda aug: iaa.Sometimes(prob, aug)
-    coords = ia.KeypointsOnImage.from_coords_array(coords, img.shape)
+    #print(coords.shape, img.shape)
+    if len(img.shape) == 3:
+        img = [img]
+    if len(coords.shape) == 3:
+        coords = [
+            ia.KeypointsOnImage.from_coords_array(coords[i], img[i].shape)
+            for i in range(coords.shape[0])
+        ]
+    else:
+        coords = [ia.KeypointsOnImage.from_coords_array(coords, img.shape)]
     #做brightness、旋转和放缩，概率为prob
     seq = iaa.Sequential(
         sometimes(iaa.Multiply((0.8, 1.2))),
@@ -43,13 +52,10 @@ def augment_both(img, coords, prob=0.5):
         sometimes(iaa.Affine(scale=(0.75, 1.25), rotate=(-30, 30))))
     #保证每次aug不一样
     seq_det = seq.to_deterministic()
-    img_aug = seq_det.augment_images([img])[0] if len(
-        img.shape) == 3 else seq_det.augment_images(img)
-    coords_aug = seq_det.augment_keypoints([coords])[0] if len(
-        coords.shape) == 2 else seq_det.augment_keypoints(coords)
-    coords = coords_aug.get_coords_array() if len(coords.shape) == 2 else [
-        coords_aug.get_coords_array() for coord_aug in coords_aug
-    ]
+    img_aug = seq_det.augment_images(img)
+    coords_aug = seq_det.augment_keypoints(coords)
+    coords = [elem.get_coords_array() for elem in coords_aug]
+
     return img_aug, coords
 
 

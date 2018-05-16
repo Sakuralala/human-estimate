@@ -59,6 +59,11 @@ def mpii_read(
                 ])
                 half_height = anno_rect['scale'][0, j][0, 0] * 100
                 #[x1,y1,x2,y2]
+                #注意此处需要判断是否超出边界
+                #TODO
+                left_up = center - half_height
+                right_bottom = center + half_height
+
                 bbox = np.concatenate((center - half_height,
                                        center + half_height))
             else:
@@ -138,3 +143,6 @@ with h5.File('mpii_train.h5', 'r') as f:
     coords=f['coords'][:]
 print(coords.shape)
 '''
+
+for i in range(5):
+    print(i)

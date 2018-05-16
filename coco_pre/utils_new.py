@@ -9,20 +9,20 @@ from imgaug import augmenters as iaa
 
 def isArrayLike(obj):
     '''
-    description:判断一个obj是否为类array
+    description:判断一个obj是否为类array np的也算
     return: bool
         true if obj is array like else false
     '''
     return hasattr(obj, '__iter__') and hasattr(obj, '__len__')
 
 
-def augment_both(img, kpt, prob=0.5):
+def augment_both(img, coords, prob=0.5):
     '''
-    description:在对img进行augment的同时相应地变换kpt的坐标,注意kpt需要先x后y.
+    description:在对img进行augment的同时相应地变换关键点的坐标,注意关键点需要先x后y.
     parameters:
         img: ndarray
             图片[h,w,3]或[b,h,w,3]
-        kpt: ndarray or list
+        coords: ndarray or list
             关键点坐标,[n,2]的array或[b,n,2]
         prob: float
             做某一项augment的概率
@@ -30,7 +30,7 @@ def augment_both(img, kpt, prob=0.5):
         增强后的imgs和转换后的coords的tuple
     '''
     sometimes = lambda aug: iaa.Sometimes(prob, aug)
-    kpts = ia.KeypointsOnImage.from_coords_array(kpt, img.shape)
+    coords = ia.KeypointsOnImage.from_coords_array(coords, img.shape)
     #做brightness、旋转和放缩，概率为prob
     seq = iaa.Sequential(
         sometimes(iaa.Multiply((0.8, 1.2))),
@@ -45,10 +45,10 @@ def augment_both(img, kpt, prob=0.5):
     seq_det = seq.to_deterministic()
     img_aug = seq_det.augment_images([img])[0] if len(
         img.shape) == 3 else seq_det.augment_images(img)
-    kpts_aug = seq_det.augment_keypoints([kpts])[0] if len(
-        kpt.shape) == 2 else seq_det.augment_keypoints(kpts)
-    coords = kpts_aug.get_coords_array() if len(kpt.shape) == 2 else [
-        kpt_aug.get_coords_array() for kpt_aug in kpts_aug
+    coords_aug = seq_det.augment_keypoints([coords])[0] if len(
+        coords.shape) == 2 else seq_det.augment_keypoints(coords)
+    coords = coords_aug.get_coords_array() if len(coords.shape) == 2 else [
+        coords_aug.get_coords_array() for coord_aug in coords_aug
     ]
     return img_aug, coords
 
@@ -57,12 +57,12 @@ def scale_coords_trans(coor, old_size, new_size):
     '''
     description:缩放变换的坐标点转换,注意coor、old_size、new_size的xy的先后顺序要一致
     parameters:
-        coor: ndarray 
+        coor: ndarray [k,2]/[b,k,2]
             原坐标
         old_size: ndarray 
-            [2],原图的大小
+            [2]/[b,2],原图的大小
         new_center: ndarray
-            [2],新图的大小
+            [2]/[b,2],新图的大小
     return: ndarray 
         返回处理好后的坐标
     '''

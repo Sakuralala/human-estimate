@@ -1,199 +1,150 @@
 import numpy as np
 import cv2
+import h5py as h5
 #用于测试时的可视化
 import imgaug as ia
 from imgaug import augmenters as iaa
 from utils_new import *
+from data_preprocess import DataPreProcess
+
 
 #------------------------------------------mpii数据预处理类-----------------------------------------------------------
-class MPIIPreProcess():
+class MPIIPreProcess(DataPreProcess):
     def __init__(self,
-                 ann_dir,
+                 h5_dir,
                  img_dir,
+                 is_train=True,
                  batch_size=12,
                  max_epoch=200,
                  filter_num=8):
         '''
         description:用于mpii数据集的预处理,包括图片、关节点信息读入及augment,用作关键点检测部分.
         parameters:
-            ann_dir: str
-                标注文件路径 
+            h5_dir: str
+                h5文件路径 
             img_dir: str
                 图片路径
+            is_train: bool
+                训练/测试
+            batch_size: int
+                ...
+            max_epoch: int 
+                最大迭代轮数 对于test来说该参数无效,内部会置为1
             filter_num: int
                 过滤掉小于多少个关键点被标注的人
         '''
-        self.img_dir = img_dir
-        self.cur_index = 0
-        self.batch_size = batch_size
+        super(MPIIPreProcess, self).__init__(img_dir, is_train, batch_size,
+                                             max_epoch)
         self.filter_num = filter_num
         #当前的轮数
         self.cur_epoch = 0
-        self.max_epoch = max_epoch
-        self.coco = COCO(ann_dir)
-        #因为person_kpt.json里面只含有person类的信息所以这步做不做都一样
-        self.cat_ids = self.coco.getCatIds(catNms=['person'])
-        self.ann_ids = self.coco.getAnnIds(catIds=self.cat_ids)
-        self.ann_ids = np.asarray([
-            ann_id for ann_id in self.ann_ids
-            if self.coco.loadAnns(ann_id)[0]['num_keypoints'] > self.filter_num
-        ])
-        print('Total person count:', self.ann_ids.shape[0])
-        #用于随机产生序列 为了使每个进程得到不同的perm 先置为none
-        self.perm = None
+        f = h5.File(h5_dir, 'r')
+        self.img_name = f['img_name'][:]
+        self.bbox = f['bbox'][:]
+        if self.is_train:
+            self.max_epoch = max_epoch
+            #用于随机产生序列 为了使每个进程得到不同的perm 先置为none
+            self.perm = None
+            self.vis = f['visible'][:]
+            self.coords_num = f['coords_num'][:]
+            self.coords = f['coords'][:]
+        else:
+            self.max_epoch = 1
+            self.perm = np.arange(self.img_name.shape[0])
 
-    #linux下调这个
-    def get_batch_gen(self, resized_size=(256, 192)):
-        '''
-        description: 得到一个预处理好的数据batch的generator
-        parameters:
-            batch_size: int
-                batch大小
-            max_epoch: int 
-                最大迭代轮数
-            resized_size: tuple  
-                统一resize的宽和高(先width后height)
-        return: generator
-            batch generator
-        '''
-        try:
-            while True:
-                img_batch, kpt_batch, kpt_img_batch = self.get_batch(
-                    resized_size)
-                yield img_batch, kpt_batch, kpt_img_batch
-        except Exception as e:
-            raise e
-
-    #windows下调这个
-    def next(self, resized_size=(256, 192)):
-        '''
-        description:for fuck windows
-        parameters:
-            resized_size: tuple
-                统一resize到的图片大小
-        return: list
-            一个预处理好的数据batch
-        '''
-        return self.get_batch(resized_size)
+        self.data_size = self.img_name.shape[0]
+        print('Total person count:', self.img_name.shape[0])
+        f.close()
 
     def get_batch(self, resized_size=(192, 256)):
         '''
         description:取得一个预处理好的batch
-            流程:
-            1.load info;
-            2.根据ann_info中的image_id找到对应的img_info并读取图片;
-            3.根据ann_info读取bbox;
-            4.抠出人;
-            5.读入并更新人的kpt坐标,具体来说就是减掉对应bbox左上角的坐标;
-            6.将人resize到统一大小并进行坐标转换;
-            7.进行data augment;
-            8.进行对应的坐标转换;
-            9.生成batch.
+            训练/验证集流程:
+            1.根据img_name读取图片;
+            2.根据bbox抠出人;
+            3.将人resize到统一大小并进行坐标转换;
+            4.读入并更新人的coords坐标,具体来说就是减掉对应bbox左上角的坐标;
+            5.进行data augment;
+            6.进行对应的坐标转换;
+            7.生成batch.
+            测试集流程：
+            1.load img_info;
+            2.get img_batch;
         parameters:
             resized_size: tuple (width,height)
                 统一resize的图片大小
         return: list
             一个batch
         '''
-        self._check_cur_index()
-        #1
-        ann_info = self._load_ann_info()
-        img_batch = []
-        kpt_batch = []
-        kpt_img_batch = []
-        for ann in ann_info:
-            #2 3 4
-            bbox = ann['bbox']
-            img = self._load_imgs(ann['image_id'], bbox)
-            #5
-            #17为关键点数量,3为(x,y,vis),其中vis=0表示未标注,vis=1表示标注了但不可见,vis=2表示标注了且可见
-            kpt_vis = np.asarray(ann['keypoints']).reshape((17, 3))
-            kpt = kpt_vis[:, 0:2].astype(np.float)
-            vis = np.expand_dims(kpt_vis[:, 2], -1)
-            kpt -= np.asarray(bbox[0:2])
-            #6
+        index = self._update_cur_index()
+        #1 2
+        imgs = self._load_imgs(index)
+        #3
+        for img in imgs:
             img = cv2.resize(img, resized_size)
-            kpt = scale_coords_trans(kpt, np.stack([bbox[2], bbox[3]]),
-                                     np.stack(
-                                         [resized_size[0], resized_size[1]]))
-            #7、8 scale、flip、rotate、brightness、blur、hue等.
-            img_aug, kpt = augment_both(img, kpt)
-            #9
-            img_batch.append(img_aug)
+        if self.is_train:
+            #4
+            coords, vis = self._load_coordsvis_info(index)
+            #[b,16,2]-[b,1,2]
+            coords -= np.expand_dims(self.bbox[index][:, 0:2], 1)
+            #[b,1,2]
+            old_size = np.expand_dims(
+                np.stack([
+                    self.bbox[:, 2] - self.bbox[:, 0],
+                    self.bbox[:, 3] - self.bbox[:, 1]
+                ], 1), 1)
+            coords = scale_coords_trans(
+                coords, old_size, np.stack([resized_size[0], resized_size[1]]))
+            #5
+            imgs_aug, coords = augment_both(imgs, coords)
             #测试用
-            kpt_img_batch.append(
-                ia.KeypointsOnImage.from_coords_array(kpt, img_aug.shape))
-            kpt_vis = np.concatenate((kpt, vis), -1)
+            coords_img_batch = [
+                ia.KeypointsOnImage.from_coords_array(coords[i],
+                                                      imgs_aug[i].shape)
+                for i in self.batch_size
+            ]
+            coords_vis = np.concatenate((coords, vis), -1)
             #找到未标注的点
-            indices = np.where(kpt_vis[:, -1] == 0)[0]
+            indices = np.where(coords_vis[:, -1] == 0)[0]
             #清零未标注的点的坐标
-            kpt_vis[indices] = 0
-            kpt_batch.append(kpt_vis)
+            coords_vis[indices] = 0
 
-        return img_batch, kpt_batch, kpt_img_batch
+            return imgs_aug, coords_vis, coords_img_batch
+        else:
+            return imgs
 
-    def _check_cur_index(self):
+    def _load_imgs(self, index):
         '''
-        description:检测当前的索引及epoch是否需要重置(一个epoch完了的话)并在到达最大epoch后raise
+        description: 载入一个batch的图片并根据bbox将对应的人抠出
         parameters:
-            none
-        return:
-            none
-        '''
-        if self.perm is None:
-            self.perm = np.random.permutation(self.ann_ids.shape[0])
-        if self.cur_index + self.batch_size > self.ann_ids.shape[0]:
-            self.perm = np.random.permutation(self.ann_ids.shape[0])
-            self.cur_index = 0
-            self.cur_epoch += 1
-            if self.cur_epoch == self.max_epoch:
-                raise ValueError('Train/Test finished.')
-
-    def _load_ann_info(self):
-        '''
-        description:用于从json文件中载入一个batch的ann_info,由于一张图里可能有多个人,为了保证batch的一致性还是使用ann_info.
-        '''
-        #id的索引
-        ann_ids_index = self.perm[self.cur_index:
-                                  self.cur_index + self.batch_size]
-        self.cur_index += self.batch_size
-        #注意一个image_id可以对应多个ann的id
-        ann_ids = self.ann_ids[ann_ids_index]
-        #print(ann_ids_index, ann_ids)
-        ann_info = self.coco.loadAnns(ann_ids)
-
-        return ann_info
-
-    def _load_imgs(self, img_ids, bboxs):
-        '''
-        description: 根据提供的img_ids找到对应的图片并根据bbox将对应的人抠出
-        parameters:
-            anns:int or list of int 
+            anns: list of int 
                 一个或一个batch的图片id
-            bbox:list or list of list
-                一个或一组bbox,注意bbox的顺序要与img_ids一一对应
-        return: ndarray  [h,w,3] or [b,h,w,3]
+            index:ndarray
+                当前的索引 
+        return: ndarray [b,h,w,3]
             imgs
         '''
-        img_ids = img_ids if isArrayLike(img_ids) else [img_ids]
-        bboxs = bboxs if isArrayLike(bboxs[0]) else [bboxs]
-        assert len(img_ids) == len(bboxs)
+        bboxs = self.bbox[index]
+        imgs = [
+            cv2.imdecode(
+                np.fromfile(self.img_dir + name, dtype=np.uint8),
+                cv2.IMREAD_COLOR)[..., ::-1] for name in self.img_name[index]
+        ]
+        for i in range(self.batch_size):
+            imgs[i] = imgs[i][bboxs[i][1]:bboxs[i][3], bboxs[i][0]:bboxs[i][2]]
 
-        #注意此处返回的是list
-        img_infos = self.coco.loadImgs(img_ids)
+        return imgs
 
-        imgs = []
-        #5
-        for i, bbox in enumerate(bboxs):
-            #避免py3中cv2.imread不能读取中文路径的问题
-            img = cv2.imdecode(
-                np.fromfile(
-                    self.img_dir + img_infos[i]['file_name'], dtype=np.uint8),
-                cv2.IMREAD_COLOR)[..., ::-1]
-            y1 = int(bbox[1])
-            y2 = int(bbox[1] + bbox[3])
-            x1 = int(bbox[0])
-            x2 = int(bbox[0] + bbox[2])
-            imgs.append(img[y1:y2, x1:x2, :])
+    def _load_coordsvis_info(self, index):
+        '''
+        description:获取关键点位置及是否可见的信息
+        parameters:
+            index:ndarray
+                当前的索引 
+        return: tuple of ndarrays
+            处理好的coords、vis信息
+        '''
+        coords = self.coords[index]
+        vis = np.expand_dims(self.vis[index], -1)
 
-        return imgs if len(imgs) > 1 else imgs[0]
+        return coords, vis

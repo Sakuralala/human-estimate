@@ -11,12 +11,12 @@ def mpii_read(
     with open('mpii_valid.txt', 'r') as f:
         valid_name = f.readlines()
         valid_name = [name[:-1] for name in valid_name]
-    #TODO height 改为height width
+    #TODO height 改为height width h==w
     keys_train = [
-        'index', 'img_name', 'center', 'height', 'coords', 'visible', 'kpt_num'
+        'index', 'img_name', 'bbox', 'coords', 'visible', 'kpt_num'
         #'normalize', 'torsoangle'暂时先不用
     ]
-    keys_test = ['index', 'img_name', 'center', 'height']
+    keys_test = ['index', 'img_name', 'bbox']
     train_dict = {k: [] for k in keys_train}
     valid_dict = {k: [] for k in keys_train}
     test_dict = {k: [] for k in keys_test}
@@ -53,11 +53,14 @@ def mpii_read(
                 #一个方法(hg的作者的)就是对于每一个人都对于一张图片，即使可能一张图片里有几个人。
                 #google了好久也没找到个靠谱的方法，那暂时只能用这个方法了
                 #或者更改存储的结构？不过上面这种做法产生的h5文件也不大，暂时可以先用着。
-                center = [
+                center = np.asarray([
                     anno_rect['objpos'][0, j][0, 0]['x'][0, 0],
                     anno_rect['objpos'][0, j][0, 0]['y'][0, 0]
-                ]
-                height = anno_rect['scale'][0, j][0, 0] * 200
+                ])
+                half_height = anno_rect['scale'][0, j][0, 0] * 100
+                #[x1,y1,x2,y2]
+                bbox = np.concatenate((center - half_height,
+                                       center + half_height))
             else:
                 continue
             #anno_rect为1x1但内部为空 经统计为0(train的)
@@ -74,7 +77,7 @@ def mpii_read(
                     if len(points.dtype.fields.keys()) == 4:
                         coords = np.zeros((16, 2))
                         vis = np.zeros((16))
-                        kpt_num=0
+                        kpt_num = 0
                         x, y, part_id, visible = points['x'], points[
                             'y'], points['id'], points['is_visible']
                         for k, index in enumerate(part_id):
@@ -82,28 +85,25 @@ def mpii_read(
                             coords[index, 0], coords[index, 1] = x[k], y[k]
                             if visible[k].shape[0] > 0:
                                 vis[index] = visible[k]
-                                kpt_num+=1
+                                kpt_num += 1
                         if img_name.decode() not in valid_name:
                             train_dict['visible'].append(vis)
                             train_dict['coords'].append(coords)
                             train_dict['index'].append(i)
                             train_dict['img_name'].append(img_name)
-                            train_dict['height'].append(height)
-                            train_dict['center'].append(center)
+                            train_dict['bbox'].append(bbox)
                             train_dict['kpt_num'].append(kpt_num)
                         else:
                             valid_dict['visible'].append(vis)
                             valid_dict['coords'].append(coords)
                             valid_dict['index'].append(i)
                             valid_dict['img_name'].append(img_name)
-                            valid_dict['height'].append(height)
-                            valid_dict['center'].append(center)
+                            valid_dict['bbox'].append(bbox)
                             valid_dict['kpt_num'].append(kpt_num)
             else:
                 test_dict['index'].append(i)
                 test_dict['img_name'].append(img_name)
-                test_dict['height'].append(height)
-                test_dict['center'].append(center)
+                test_dict['bbox'].append(bbox)
 
     return train_dict, valid_dict, test_dict
 
@@ -132,7 +132,9 @@ with h5.File('mpii_test.h5', 'w') as f:
 
 print('test.h5 writen done.')
 '''
+'''
 with h5.File('mpii_train.h5', 'r') as f:
     #14679 22245 train  6619 11731 test 2729 6637 valid
-    print(f['kpt_num'][:100])
-    print(np.unique(f['index'][:]).shape)
+    coords=f['coords'][:]
+print(coords.shape)
+'''

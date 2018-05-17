@@ -4,8 +4,8 @@ import h5py as h5
 #用于测试时的可视化
 import imgaug as ia
 from imgaug import augmenters as iaa
-from utils_new import *
-from data_preprocess import DataPreProcess
+from utils.utils import *
+from data_loader.data_preprocess import DataPreProcess
 
 
 #------------------------------------------mpii数据预处理类-----------------------------------------------------------

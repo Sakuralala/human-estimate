@@ -1,10 +1,9 @@
 import cv2
 import numpy as np
-from utils_new import *
+from utils.utils import *
 from multiprocessing import freeze_support
-from data_gen import *
-from coco_preprocess import COCOPreProcess
-from mpii_preprocess import MPIIPreProcess
+from data_loader.coco_preprocess import COCOPreProcess
+from data_loader.mpii_preprocess import MPIIPreProcess
 
 if __name__ == '__main__':
     freeze_support()

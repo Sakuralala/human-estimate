@@ -3,6 +3,7 @@ import cv2
 import scipy.io as sio
 import numpy as np
 import h5py as h5
+from utils.utils import isArrayLike
 
 
 def mpii_read(
@@ -121,6 +122,7 @@ def mpii_read(
     return train_dict, valid_dict, test_dict
 
 
+'''
 ret = mpii_read()
 print('start to convert to h5 file..........')
 with h5.File('mpii_train.h5', 'w') as f:
@@ -143,9 +145,11 @@ with h5.File('mpii_test.h5', 'w') as f:
         f[key] = ret[2][key]
 
 print('test.h5 writen done.')
-'''
 with h5.File('mpii_train.h5', 'r') as f:
     #14679 22245 train  6619 11731 test 2729 6637 valid
     coords=f['coords'][:]
 print(coords.shape)
 '''
+l=np.asarray([[11],[1,2,3],[3,4]])
+l2=np.asarray([[1],[2],[3]])
+print(l[1])

@@ -65,25 +65,23 @@ def augment_both(img, coords, prob=0.5):
         img: ndarray
             图片[h,w,3]或[b,h,w,3]
         coords: ndarray or list
-            关键点坐标,[n,2]的array或[b,n,2]
+            关键点坐标,[n,2]的array或[b,n,2] 或[b,x,2] x表示改维度的长度不一定一致
         prob: float
             做某一项augment的概率
     return: tuple of list
         增强后的imgs和转换后的coords的tuple
     '''
+    #ia.seed(1)
     sometimes = lambda aug: iaa.Sometimes(prob, aug)
     #print(coords.shape, img.shape)
     if len(img.shape) == 3:
         img = [img]
-    if len(coords.shape) == 3:
-        coords = [
-            ia.KeypointsOnImage.from_coords_array(coords[i], img[i].shape)
-            for i in range(coords.shape[0])
-        ]
-    else:
-        coords = [ia.KeypointsOnImage.from_coords_array(coords, img.shape)]
+    coords = [
+        ia.KeypointsOnImage.from_coords_array(coords[i], img[i].shape)
+        for i in range(coords.shape[0])
+    ]
     #做brightness、旋转和放缩，概率为prob
-    seq = iaa.Sequential(
+    seq = iaa.Sequential([
         sometimes(iaa.Multiply((0.8, 1.2))),
         sometimes(
             iaa.OneOf([
@@ -91,7 +89,8 @@ def augment_both(img, coords, prob=0.5):
                 iaa.AverageBlur(k=(2, 7)),
                 iaa.MedianBlur(k=(3, 11))
             ])),
-        sometimes(iaa.Affine(scale=(0.75, 1.25), rotate=(-30, 30))))
+        sometimes(iaa.Affine(scale=(0.75, 1.25), rotate=(-30, 30)))
+    ])
     #保证每次aug不一样
     seq_det = seq.to_deterministic()
     img_aug = seq_det.augment_images(img)

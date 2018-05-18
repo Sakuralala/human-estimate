@@ -13,6 +13,7 @@ class MPIIPreProcess(DataPreProcess):
     def __init__(self,
                  h5_dir,
                  img_dir,
+                 resized_size=(192, 256),
                  is_train=True,
                  batch_size=12,
                  max_epoch=200,
@@ -24,6 +25,8 @@ class MPIIPreProcess(DataPreProcess):
                 h5文件路径 
             img_dir: str
                 图片路径
+            resized_size: tuple
+                宽 高
             is_train: bool
                 训练/测试
             batch_size: int
@@ -33,8 +36,8 @@ class MPIIPreProcess(DataPreProcess):
             filter_num: int
                 过滤掉小于多少个关键点被标注的人
         '''
-        super(MPIIPreProcess, self).__init__(img_dir, is_train, batch_size,
-                                             max_epoch)
+        super(MPIIPreProcess, self).__init__(img_dir, resized_size, is_train,
+                                             batch_size, max_epoch)
         self.filter_num = filter_num
         #当前的轮数
         self.cur_epoch = 0
@@ -63,7 +66,7 @@ class MPIIPreProcess(DataPreProcess):
         print('Total person count:', self.img_name.shape[0])
         f.close()
 
-    def get_batch(self, resized_size=(192, 256)):
+    def get_batch(self):
         '''
         description:取得一个预处理好的batch
             训练/验证集流程:
@@ -78,8 +81,6 @@ class MPIIPreProcess(DataPreProcess):
             1.load img_info;
             2.get img_batch;
         parameters:
-            resized_size: tuple (width,height)
-                统一resize的图片大小
         return: list
             一个batch
         '''
@@ -87,7 +88,7 @@ class MPIIPreProcess(DataPreProcess):
         #1 2
         imgs = self._load_imgs(index)
         #3
-        imgs = np.asarray([cv2.resize(img, resized_size) for img in imgs])
+        imgs = np.asarray([cv2.resize(img, self.resized_size) for img in imgs])
         if self.is_train:
             #4
             coords, vis = self._load_coordsvis_info(index)
@@ -100,7 +101,8 @@ class MPIIPreProcess(DataPreProcess):
                     self.bbox[index][:, 3] - self.bbox[index][:, 1]
                 ], 1), 1)
             coords = scale_coords_trans(
-                coords, old_size, np.stack([resized_size[0], resized_size[1]]))
+                coords, old_size,
+                np.stack([self.resized_size[0], self.resized_size[1]]))
             #5
             imgs_aug, coords = augment_both(imgs, coords)
             #测试用

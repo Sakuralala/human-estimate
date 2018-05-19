@@ -10,7 +10,7 @@ from utils.utils import *
 from .data_preprocess import DataPreProcess
 
 
-#------------------------------------------COCO数据预处理类-----------------------------------------------------------
+#------------------------------------------符合COCO数据类型的预处理类--------------------------------------------------
 class COCOPreProcess(DataPreProcess):
     def __init__(self,
                  img_dir,
@@ -22,7 +22,7 @@ class COCOPreProcess(DataPreProcess):
                  max_epoch=200,
                  filter_num=8):
         '''
-        description:用于coco数据集人的部分的预处理,包括图片、关节点信息读入及augment,用作关键点检测部分.
+        description:用于coco数据集及json文件与coco的json文件相兼容的数据集(一般需要先将原始的标注文件转换为和coco的json文件兼容的json文件)的人的部分的预处理,包括图片、关节点信息读入及augment,用作关键点检测部分.
         parameters:
             json_dir: str
                 json文件路径,对于测试文件来说，没有annotation这一项
@@ -66,7 +66,7 @@ class COCOPreProcess(DataPreProcess):
         else:
             self.data_size = self.img_ids.shape[0]
             print('Total image count:', self.img_ids.shape[0])
-        #用于随机产生序列 为了使每个进程得到不同的perm 先置为none
+        #用于随机产生序列 为了使每个子进程得到不同的perm 先置为none
         #对于test来说不需要打乱
         self.perm = None if self.is_train == True else np.arange(
             self.img_ids.shape[0])
@@ -107,10 +107,11 @@ class COCOPreProcess(DataPreProcess):
                 coords = scale_coords_trans(
                     coords, old_size,
                     np.stack([self.resized_size[0], self.resized_size[1]]))
-            #因为bottom-up时一张图里的人的数量不一定相同，那么coords也不是一个各维度都相同的array
             else:
                 resized_size = np.stack(
                     [self.resized_size[0], self.resized_size[1]])
+                #因为bottom-up时一张图里的人的数量不一定相同，那么coords也不是一个各维度都相同的array
+                #所以只能一次次循环调用
                 coords = np.asarray([
                     scale_coords_trans(coords[i], old_size[i], resized_size)
                     for i in range(len(coords))
@@ -162,7 +163,7 @@ class COCOPreProcess(DataPreProcess):
             一个batch的图片信息和关键点信息
         '''
         #1
-        ann_info = self._load_ann_info(index)
+        ann_info = self._load_ann_info_single(index)
         #2 3 4 [b,4]
         bboxs = np.asarray([ann['bbox'] for ann in ann_info])
         img_ids = [ann['image_id'] for ann in ann_info]
@@ -170,7 +171,7 @@ class COCOPreProcess(DataPreProcess):
         #[b,51]
         kpt_info = [ann['keypoints'] for ann in ann_info]
         #5 [b,17,2] [b,17,1]
-        coords, vis = self._load_kptvis_info(kpt_info)
+        coords, vis = self._load_kpt_info(kpt_info)
         coords -= np.expand_dims(bboxs[:, 0:2], 1)
 
         return img_batch, coords, vis
@@ -194,13 +195,13 @@ class COCOPreProcess(DataPreProcess):
             kpt_info = [ann['keypoints'] for ann in ann_info]
             #同张图里所有人的所有关键点放在一个list中
             kpt_info = list(itertools.chain.from_iterable(kpt_info))
-            kpt_vis = self._load_kptvis_info(kpt_info)
+            kpt_vis = self._load_kpt_info(kpt_info)
             coords_list.append(kpt_vis[0])
             vis_list.append(kpt_vis[1])
 
         return img_batch, coords_list, vis_list
 
-    def _load_ann_info(self, index):
+    def _load_ann_info_single(self, index):
         '''
         description:用于从train/val json文件中载入一个batch的ann_info,由于一张图里可能有多个人,为了保证batch的一致性还是使用ann_info.
         parameters: 
@@ -269,7 +270,7 @@ class COCOPreProcess(DataPreProcess):
 
         return imgs
 
-    def _load_kptvis_info(self, keypoints_info):
+    def _load_kpt_info(self, keypoints_info):
         '''
         description:获取关键点位置及是否可见的信息
         parameters:

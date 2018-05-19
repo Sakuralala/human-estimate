@@ -1,3 +1,4 @@
+#deprecated   直接调用coco的预处理即可  不过首先需要将mpii的mat文件转换为符合coco形式的json文件，详情见convert2json.py
 import numpy as np
 import cv2
 import h5py as h5
@@ -5,7 +6,7 @@ import h5py as h5
 import imgaug as ia
 from imgaug import augmenters as iaa
 from utils.utils import *
-from data_loader.data_preprocess import DataPreProcess
+from .data_preprocess import DataPreProcess
 
 
 #------------------------------------------mpii数据预处理类-----------------------------------------------------------

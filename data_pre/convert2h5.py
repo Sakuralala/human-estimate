@@ -150,6 +150,3 @@ with h5.File('mpii_train.h5', 'r') as f:
     coords=f['coords'][:]
 print(coords.shape)
 '''
-l=np.asarray([[11],[1,2,3],[3,4]])
-l2=np.asarray([[1],[2],[3]])
-print(l[1])

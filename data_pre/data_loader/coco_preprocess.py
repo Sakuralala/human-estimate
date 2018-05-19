@@ -7,7 +7,7 @@ import itertools
 import imgaug as ia
 from imgaug import augmenters as iaa
 from utils.utils import *
-from data_loader.data_preprocess import DataPreProcess
+from .data_preprocess import DataPreProcess
 
 
 #------------------------------------------COCO数据预处理类-----------------------------------------------------------
@@ -45,7 +45,10 @@ class COCOPreProcess(DataPreProcess):
                                              is_multi, batch_size, max_epoch)
         self.filter_num = filter_num
         self.coco = COCO(json_dir)
-        self.cat_ids = self.coco.getCatIds(catNms=['person'])
+        if 'categories' in self.coco.dataset:
+            self.cat_ids = self.coco.getCatIds(catNms=['person'])
+        else:
+            self.cat_ids = []
         self.img_ids = np.asarray(self.coco.getImgIds(catIds=self.cat_ids))
         if self.is_train:
             self.ann_ids = self.coco.getAnnIds(catIds=self.cat_ids)
@@ -127,7 +130,7 @@ class COCOPreProcess(DataPreProcess):
                 indices = np.where(kpt_batch[..., 2] == 0)
                 #print(indices[0].shape)
                 #清零未标注的点的坐标
-                if len(indices)>0:
+                if len(indices) > 0:
                     kpt_batch[indices[0], indices[1]] = 0
             else:
                 kpt_batch_origin = [
@@ -137,7 +140,7 @@ class COCOPreProcess(DataPreProcess):
                 kpt_batch = []
                 for kpt in kpt_batch_origin:
                     indices = np.where(kpt[:, 2] == 0)[0]
-                    if len(indices)>0:
+                    if len(indices) > 0:
                         kpt[indices[0]] = 0
                     kpt_batch.append(kpt)
 
@@ -173,6 +176,14 @@ class COCOPreProcess(DataPreProcess):
         return img_batch, coords, vis
 
     def _get_batch_multi(self, index):
+        '''
+        description:bottom-up类取得一个batch的原始的图片及转换后关键点信息
+        parameters:
+            index: ndarray
+                索引
+        return: tuple
+            一个batch的图片信息和关键点信息
+        '''
         img_ids = self.img_ids[index].tolist()
         img_batch = self._load_imgs(img_ids)
         ann_info_list = self._load_ann_info_multi(img_ids)

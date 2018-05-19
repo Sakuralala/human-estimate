@@ -8,10 +8,10 @@ from data_loader.mpii_preprocess import MPIIPreProcess
 if __name__ == '__main__':
     freeze_support()
     data_pre = COCOPreProcess(
-        'D:/迅雷下载/coco/val2017/',
-        'D:/迅雷下载/coco/annotations_trainval2017/annotations/person_keypoints_val2017.json',
-        resized_size=(1024, 1024),
-        is_multi=True)
+        'D:/迅雷下载/mpii_human_pose_v1/images/',
+        'mpii_train.json',
+        resized_size=(512, 768),
+        batch_size=1)
     '''
     mpii_pre = MPIIPreProcess('mpii_train.h5',
                               'D:/迅雷下载/mpii_human_pose_v1/images/',batch_size=1)

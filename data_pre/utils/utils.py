@@ -7,7 +7,7 @@ import tensorflow as tf
 import imgaug as ia
 import os
 from imgaug import augmenters as iaa
-from utils.parallel_gen import GeneratorEnqueuer
+from .parallel_gen import GeneratorEnqueuer
 
 
 #batch生成器 ...

@@ -136,7 +136,14 @@ deeper cut的进化版，相比于其他的不咋地。
 
 2018.04.11  
 1、YOLO类 one-stage算法，使用一个cnn框架进行回归和分类。  
-    v1:
+    *v1*  
+    大致思想：将一张输入图片分为SxS的单元格，每个单元格用以检测目标物体的中心落在单元格内的物体，且每个单元格会预测b个检测框(适应不同比例的物体,但在训练过程中只选预测的检测框与gt框IOU最大的进行loss计算，其他的框忽略)及检测框对应的置信度，为检测框预测含有目标的概率乘以检测框与gt框之间的IOU；另外，对于检测框而言，有4个值：[x,y,w,h],分别表示预测的检测框的中心坐标和宽高,即在回归部分每个单元格总共需要预测5个值。  
+    以上为回归的部分，还需要有分类的部分，即对于每个单元格而言还需要其给出c个类别的概率值，注意此处是对单元格而不是检测框而言，即在yolov1中每个单元格只能对应于一种类别。  
+    故对于每个单元格而言总共需要给出(5*b+c)个预测，对于原文中，s=7，b=2，c=20，则最终的输出为[7,7,30]的张量。  
+
+loss:分两类，分别为定位误差和分类误差，均采用mse。  
+a.回归误差  
+$L_{coord}=\sum_{i=1}^{S^2}\sum_{j=1}^{b}[(x_i^{pred}-x_i^{gt})^2+(y_i^{pred}-x_i^{pred})^2]$  
 
 
 
@@ -192,3 +199,8 @@ end-to-end,two modules，其一为hourglass模块，其二为深度回归模块�
 $L_J^t=\sum_{k=1}^{N_J}\sum_{z\in Z}(||J^t_{pred}(z,k)-J^{t}_{gt}(z,k)||^2_2)$;  
 $L_B^t=\frac{-1}{|Z|}\sum_{z\in Z}log(B^t_{z\_pred,B^t_{z\_gt}})$;(论文里说是logistic loss)  
 $L_R^t=\sum_{i=1}^{N_R}\sqrt(\sum_{j=1}^3(R^t_{pred}(i,j)-R^t_{gt}(i,j))^2+\theta^2)$。    
+
+
+2018.05.21  
+1、Object detection at 200 Frames Per Second  
+network distillation：网络蒸馏，详见:Distilling the knowledge in a neural network.  

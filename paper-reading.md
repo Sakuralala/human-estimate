@@ -137,7 +137,7 @@ deeper cut的进化版，相比于其他的不咋地。
 2018.04.11  
 1、YOLO类 one-stage算法，使用一个cnn框架进行回归和分类。  
     *v1*  
-    大致思想：将一张输入图片分为SxS的单元格，每个单元格用以检测目标物体的中心落在单元格内的物体，且每个单元格会预测b个检测框(适应不同比例的物体,但在训练过程中只选预测的检测框与gt框IOU最大的进行loss计算，其他的框忽略)及检测框对应的置信度，为检测框预测含有目标的概率乘以检测框与gt框之间的IOU；另外，对于检测框而言，有4个值：[x,y,w,h],分别表示预测的检测框的中心坐标和宽高,即在回归部分每个单元格总共需要预测5个值。  
+    大致思想：将一张输入图片分为SxS的单元格，每个单元格用以检测目标物体的中心落在单元格内的物体，且每个单元格会预测b个检测框(适应不同比例的物体,但在训练过程中只选预测的检测框与gt框IOU最大的进行loss计算，其他的框忽略)及检测框对应的置信度，为检测框预测含有目标的概率乘以检测框与gt框之间的IOU,注意此处对于训练而言得到的直接就是一个置信度$c_i^{pred}$,而对于gt的置信度而言并不一定为1，只有两项中的存在目标物体的概率为1，而iou则需要具体计算，即gt的置信度一般是小于1的；另外，对于检测框而言，有4个值：[x,y,w,h],分别表示预测的检测框的中心坐标和宽高,即在回归部分每个单元格总共需要预测5个值。  
     以上为回归的部分，还需要有分类的部分，即对于每个单元格而言还需要其给出c个类别的概率值，注意此处是对单元格而不是检测框而言，即在yolov1中每个单元格只能对应于一种类别。  
     故对于每个单元格而言总共需要给出(5*b+c)个预测，对于原文中，s=7，b=2，c=20，则最终的输出为[7,7,30]的张量。  
 
@@ -149,9 +149,34 @@ b.类别误差
 $L_{obj}=\sum_{i=1}^{s^2}\sum_{j=1}^b1_{ij}^{obj}(c_i^{pred}-c_i^{gt})^2$  
 $L_{noobj}=\sum_{i=1}^{s^2}\sum_{j=1}^b1_{ij}^{noobj}(c_i^{pred}-c_i^{gt})^2$  
 $L_c=\sum_{i=1}^{s^2}1_{i}^{obj}(P_i^{pred}(c)-P_i^{gt}(c))^2$  
-上式中，$1_i^{obj}$表示单元格内存在物体且判断为各个类别的概率；$1_{ij}^{noobj}$表示。。。
+上式中，$1_i^{obj}$表示单元格内存在物体且判断为各个类别的概率；$1_{ij}^{noobj}$表示不存在目标物体的检测框，即对于某个单元格而言，其所有的检测框中预测不存在目标物体的均加入计算，且对于后面的平方项而言，gt的置信度应该为0，因为对于不存在目标物体的单元格，其真实的存在目标物体的概率应该为0。    
 
 
+一些细节部分:  
+1.关于每个检测框预测的5个值[x,y,w,h,c]  
+x、y为预测的检测框的中心点，无单位，是相对于其所属单元格左上角的比例；而预测的w、h是经过开根号的，这在loss中也可看出，这是因为对于小目标的物体，检测框尺寸的变换更应该敏感一些。  
+2.关于IOU的计算  
+看代码的计算其定义应该为：预测的框和真实的框相重合的面积s1除以预测的框和真实的框取并之后的面积。  
+3.label的准备  
+对于不存在目标物体的单元格label是如何准备的？对于不存在目标物体的单元格的IOU如何计算？？？(直接为0)具体见 \url{https://note.youdao.com/share/?id=cfe081b9980b9623feaadfc81d00de94&type=note#/}  
+4.loss公式中$1_{ij}^{obj}$及$1_{ij}^{noobj}$的相关代码部分  
+```python
+#[b,s,s,boxes]
+#计算iou这步就可以把所有不存在目标的单元格的各个检测框给搞定(置为0)
+iou_predict_truth = self.calc_iou(predict_boxes_tran, boxes)
+
+# calculate I tensor [BATCH_SIZE, CELL_SIZE, CELL_SIZE, BOXES_PER_CELL]
+object_mask = tf.reduce_max(iou_predict_truth, 3, keep_dims=True)
+#转换为true或false
+#这个就是公式中的 1_{ij}^{obj}
+object_mask = tf.cast(
+    (iou_predict_truth >= object_mask), tf.float32) * response
+
+# calculate no_I tensor [BATCH_SIZE,CELL_SIZE, CELL_SIZE, BOXES_PER_CELL]
+#这个就是1_{ij}^{noobj}
+noobject_mask = tf.ones_like(
+    object_mask, dtype=tf.float32) - object_mask
+```
 2018.04.20  
 1、Adversarial Complementary Learning for Weakly Supervised Object Localization  
 用fcn做分类时最终产生的c个类别的feature maps，研究发现分类任务往往是靠目标类别的某一部分来进行的，即对应的featuremaps只有对应的部分响应较高，这篇文章使用的方法就是强制先把第一个分类器产生的locationmaps的响应部分置0然后扔给第二个分类器强迫它通过别的部分来进行分类，这样最后把两个locationmaps进行max(pixel_a,pixel_b)，即找到每个对应像素位置的最大值来得到整个目标的响应。

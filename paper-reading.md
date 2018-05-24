@@ -107,14 +107,15 @@ deeper cut的进化版，相比于其他的不咋地。
 可以看作是RPN+Fast-RCNN,其中RPN用以产生候选区域和概率，用作Fast RCNN的输入。  
     a.RPN的大致流程：  
     ①.输入的图像通过一个cnn(resnet等)提取特征并生成一系列feature maps;  
-    ②.在feature maps上做slide操作。具体来说，即对feature map做3*3卷积(不知道这个是干啥，可能是为了再提取一次信息、进一步提高reception field？)。对于一个h\*w的feature map上的每一个像素点均对应有k个不同的anchor(即候选区域，不同的scale和ratio,为什么叫做anchor，本人的理解是这个anchor候选框就像是一个基准一样，后面得到预测的bounding box时是通过上一次更新后的anchor作为基准再进行相应的线性变换从而得到的和gt bounding box更接近的框,另外，anchor的四个坐标是根据图片的大小预先生成的，基本上可以涵盖各种各样的形状),故对于一张feature map，可以产生h\*w\*k个anchor;  
+    ②.在feature maps上做slide操作。具体来说，即对feature map做3\*3卷积(不知道这个是干啥，可能是为了再提取一次信息、进一步提高reception field？)。对于一个h\*w的feature map上的每一个像素点均对应有k个不同的anchor(即候选区域，不同的scale和ratio,为什么叫做anchor，本人的理解是这个anchor候选框就像是一个基准一样，后面得到预测的bounding box时是通过上一次更新后的anchor作为基准再进行相应的线性变换从而得到的和gt bounding box更接近的框,另外，anchor的四个坐标是根据图片的大小预先生成的，基本上可以涵盖各种各样的形状),故对于一张feature map，可以产生h\*w\*k个anchor;  
     ③.分两路，一路用作分类，即对每个anchor进行正负label的判别，产生2k个scores(分为前景和背景，对feature map中的每个像素点而言),故最终的输出为h\*w\*2k,使用的是softmax交叉熵损失(logistic也可);另一路用作回归，对feature map中的每个像素点均产生4k个坐标((x,y,w,h),中心坐标和anchor的宽、高,表示预测的值)，总共为h\*w\*4k。  
         note:关于回归的loss，不是直接计算预测的四个值和真实的差距，而是使用了所谓的parameterizated coor,即学习一种变换t,使得anchor经过变换t后得到的bounding box(也是新的anchor)和gt bounding box差距减小，设真实的变换为t*,则优化的目标就是是学习的变换t和真实的变换t*之间的差距尽可能地小，这里回归部分使用的是smooth_l1_loss。另外，论文中采取的变换为平移(改变x、y)+缩放(改变h、w)，对应的变换公式为：  
-        x_pred=t_x\*w_a+x_a,->t_x=(x_pred-x_a)/w_a  
-        y_pred=t_y\*h_a+y_a,->t_y=(y_pred-y_a)/h_a  
-        w_pred=w_a\*exp(t_w),->t_w=log(w_pred/w_a)  
-        h_pred=h_a\*exp(t_h),->t_h=log(h_pred/h_a)  
-        其中t=[t_x,t_y,t_w,t_h]即为需要学习的参数。  
+        $x_{pred}=t_x*w_a+x_a,->t_x=\frac{x_{pred}-x_a}{w_a}$  
+        $y_{pred}=t_y*h_a+y_a,->t_y=\frac{y_{pred}-y_a}{h_a}$  
+        $w_{pred}=w_a*e^{t_w},->t_w=log(\frac{w_pred}{w_a})$    
+        $h_{pred}=h_a*e^{t_h},->t_h=log(\frac{h_pred}{h_a})$    
+        其中t=[t_x,t_y,t_w,t_h]即为需要学习的参数;真实的$t^*$将$x_{pred}、y_{pred}、w_{pred}、h_{pred}$换为gt即可，损失计算公式：  
+
     ④.proposal layer。大致步骤如下：  
         根据t来生成新的anchors；  
         使用分类路的分数大小来对anchor进行排序，取前N个；
@@ -158,7 +159,7 @@ x、y为预测的检测框的中心点，无单位，是相对于其所属单元
 2.关于IOU的计算  
 看代码的计算其定义应该为：预测的框和真实的框相重合的面积s1除以预测的框和真实的框取并之后的面积。  
 3.label的准备  
-对于不存在目标物体的单元格label是如何准备的？对于不存在目标物体的单元格的IOU如何计算？？？(直接为0)具体见 \url{https://note.youdao.com/share/?id=cfe081b9980b9623feaadfc81d00de94&type=note#/}  
+对于不存在目标物体的单元格label是如何准备的？对于不存在目标物体的单元格的IOU如何计算？？？(直接为0)具体见 \url {https://note.youdao.com/share/?id=cfe081b9980b9623feaadfc81d00de94&type=note#/}  
 4.loss公式中$1_{ij}^{obj}$及$1_{ij}^{noobj}$的相关代码部分  
 ```python
 #[b,s,s,boxes]
@@ -177,8 +178,20 @@ object_mask = tf.cast(
 noobject_mask = tf.ones_like(
     object_mask, dtype=tf.float32) - object_mask
 ```
+*v2*  
+插一个概念:精确率(precision)、召回率(recall)  
+精确率的定义：预测为正的样本中的确为正的样本的比例，即：  
+$P=\frac{TP}{TP+FP}$,TP表示预测为正真实也为正的样本，FP表示预测为正真实为负的样本；  
+召回率的定义：预测为正的样本占所有真实正样本的比例，即：  
+$R=\frac{TP}{TP+FN}$,FN表示预测为负真实为正的样本。  一图敝之：![pre_rec](pre_rec.jpg) 
+
+
+2018.05.xx  
+SSD:Single Shot Detector  
+*v1*  
+
 2018.04.20  
-1、Adversarial Complementary Learning for Weakly Supervised Object Localization  
+1、Adversarial Complementary Learning for Weakly Supervised Object Localization    
 用fcn做分类时最终产生的c个类别的feature maps，研究发现分类任务往往是靠目标类别的某一部分来进行的，即对应的featuremaps只有对应的部分响应较高，这篇文章使用的方法就是强制先把第一个分类器产生的locationmaps的响应部分置0然后扔给第二个分类器强迫它通过别的部分来进行分类，这样最后把两个locationmaps进行max(pixel_a,pixel_b)，即找到每个对应像素位置的最大值来得到整个目标的响应。
 
 2018.04.25  

@@ -109,7 +109,7 @@ deeper cut的进化版，相比于其他的不咋地。
     ①.输入的图像通过一个cnn(resnet等)提取特征并生成一系列feature maps;  
     ②.在feature maps上做slide操作。具体来说，即对feature map做3\*3卷积(不知道这个是干啥，可能是为了再提取一次信息、进一步提高reception field？)。对于一个h\*w的feature map上的每一个像素点均对应有k个不同的anchor(即候选区域，不同的scale和ratio,为什么叫做anchor，本人的理解是这个anchor候选框就像是一个基准一样，后面得到预测的bounding box时是通过上一次更新后的anchor作为基准再进行相应的线性变换从而得到的和gt bounding box更接近的框,另外，anchor的四个坐标是根据图片的大小预先生成的，基本上可以涵盖各种各样的形状),故对于一张feature map，可以产生h\*w\*k个anchor;  
     ③.分两路，一路用作分类，即对每个anchor进行正负label的判别，产生2k个scores(分为前景和背景，对feature map中的每个像素点而言),故最终的输出为h\*w\*2k,使用的是softmax交叉熵损失(logistic也可);另一路用作回归，对feature map中的每个像素点均产生4k个坐标((x,y,w,h),中心坐标和anchor的宽、高,表示预测的值)，总共为h\*w\*4k。  
-        note:关于回归的loss，不是直接计算预测的四个值和真实的差距，而是使用了所谓的parameterizated coor,即学习一种变换t,使得anchor经过变换t后得到的bounding box(也是新的anchor)和gt bounding box差距减小，设真实的变换为t*,则优化的目标就是是学习的变换t和真实的变换t*之间的差距尽可能地小，这里回归部分使用的是smooth_l1_loss。另外，论文中采取的变换为平移(改变x、y)+缩放(改变h、w)，对应的变换公式为：  
+        note:关于回归的loss，预测的四个值并非为直接的[x,y,w,h]，而是使用了所谓的parameterizated coor,输出的为一种变换$t=[t_x,t_y,t_w,t_h]$,即学习一种变换t,使得anchor经过变换t后得到的bounding box(也是新的anchor)和gt bounding box差距减小，设真实的变换为t*,则优化的目标就是是学习的变换t和真实的变换t*之间的差距尽可能地小，这里回归部分使用的是smooth_l1_loss。另外，论文中采取的变换为平移(改变x、y)+缩放(改变h、w)，对应的变换公式为：  
         $x_{pred}=t_x*w_a+x_a,->t_x=\frac{x_{pred}-x_a}{w_a}$  
         $y_{pred}=t_y*h_a+y_a,->t_y=\frac{y_{pred}-y_a}{h_a}$  
         $w_{pred}=w_a*e^{t_w},->t_w=log(\frac{w_pred}{w_a})$    
@@ -185,6 +185,44 @@ $P=\frac{TP}{TP+FP}$,TP表示预测为正真实也为正的样本，FP表示预�
 召回率的定义：预测为正的样本占所有真实正样本的比例，即：  
 $R=\frac{TP}{TP+FN}$,FN表示预测为负真实为正的样本。  一图敝之：![pre_rec](pre_rec.jpg) 
 
+相对于v1的改进有：  
+1.新的网络结构：darknet-19  
+![darknet19a](darknet-19.jpg)
+![darknet19b](darknet.jpg)
+计算量大约减少了33%。  
+2.使用了和faster-rcnn一样的先验框(anchor boxes)策略  
+a.与yolov1不同，现在yolov2的每个检测框均对应于一套类别的预测；  
+b.和faster-rcnn的变换t不同，作者认为faster-rcnn的变换形式是无约束的，变换后的新的anchor的位置可以出现在图片的任何地方，yolov2使用了一种新的变换形式,即预测检测框中心点相对于当前cell(就是经过darknet后产生的特征图的一个点)左上角的偏移，$t=[\sigma(t_x),\sigma(t_y),t_w,t_h]$(训练时输出的不带sigma，但是计算loss时会先将前两项约束到1然后进行坐标loss的计算),且使用sigmoid函数将其限制在当前cell范围内，故这样训练起来效率更高。具体的变换式子如下:  
+$x_{pred}=\sigma (t_x)+x_c$  
+$y_{pred}=\sigma (t_y)+y_c$  
+$w_{pred}=w_a*e^{t_w}$    
+$h_{pred}=h_a*e^{t_h}$  
+注意上面的坐标的单位均为在特征图cell个数下的，即cell的长框均看作1，总共多少个cell就总共多长多宽。记特征图的长宽分别为$w_{feat}$、$h_{feat}$，原图片的大小分别为$w_{img}$、$h_{img}$,则有:  
+$x_{pred}^{abs}=\frac{x_{pred}*w_{img}}{w_{feat}}$   
+$y_{pred}^{abs}=\frac{y_{pred}*h_{img}}{h_{feat}}$   
+$w_{pred}^{abs}=\frac{w_{pred}*w_{img}}{w_{feat}}$   
+$h_{pred}^{abs}=\frac{h_{pred}*h_{img}}{h_{feat}}$   
+一图敝之：  
+![trans](yolov2_anchor.jpg)
+3.细粒度特征(Fine-Grained Features)  
+尺寸小的特征图语义层次更高，一个像素点对应于原图的区域大，即感受野大，利用检测大的物体，但是对于小的物体而言，需要前面尺寸大的特征图，为了解决这个问题，yolov2提出了所谓的passthrough层(也称为reorg layer)，其实和resnet的identity map类似，即将前面更高尺寸的特征图的wh维度转换为channel维度，使得转换后的wh和后面的特征图的wh相同，然后concatenate channel维度即可：(在tf中可以tf.space_to_depth实现)    
+![reorg](reorg.jpg)
+4.multi-scale training,多尺度图片训练  
+每个10个epoch随机更换一组图片尺寸进行训练，使得模型可以适应不同大小的图片。  
+![mulsca](multi-scale.jpg)  
+
+训练流程：  
+YOLOv2的训练主要包括三个阶段:  
+1.分类器 低分辨率  
+第一阶段就是先在ImageNet分类数据集上预训练Darknet-19，此时模型输入为224x224，训练160个epochs;  
+2.分类器 高分辨率fine-tune  
+第二阶段将网络的输入调整为448x448，继续在ImageNet数据集上finetune分类模型，训练10个epochs，此时分类模型的top-1准确度为76.5%，而top-5准确度为93.3%。  
+3.检测器  
+第三个阶段就是修改Darknet-19分类模型为检测模型，并在检测数据集上继续finetune网络。网络修改包括：移除最后一个卷积层、global avgpooling层以及softmax层，并且新增了三个 3x3x2014卷积层，同时增加了一个passthrough层，最后使用 1x1卷积层输出预测结果，输出的channels数为：num_anchorsx(5+num_classes)，和训练采用的数据集有关系。  
+
+loss:  
+一图敝之，懒得解释了，太多。。：  
+![loss](yolov2loss.jpg)
 
 2018.05.xx  
 SSD:Single Shot Detector  

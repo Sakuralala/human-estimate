@@ -226,7 +226,16 @@ loss:
 
 2018.05.xx  
 SSD:Single Shot Detector  
-*v1*  
+*v1*   
+相对于yolov1的不同处：  
+1、没有全连接层，直接使用卷积层来进行检测；  
+2、采用多尺度特征图进行检测，和yolov2类似，前面分辨率大的特征图用于检测小的物体，后面分辨率小的特征图用于检测大的物体；  
+![mul-scale](mul-scale-ssd.jpg)   
+3、先验框(anchor boxes)  
+a.预测的分类  
+预测的分为两部分，一个是偏移值$t=[t_x,t_y,t_w,t_h]$,策略基本同faster-rcnn,转换式子懒得写了；另一部分为为各个类别的置信度评分，包括背景类，故假设本来的类别数为c，则最后预测的类别数为c+1;假设先验框的个数为k，则特征图中的每个点需要预测k(c+1+4)个值。  
+b.先验框匹配策略  
+
 
 2018.04.20  
 1、Adversarial Complementary Learning for Weakly Supervised Object Localization    
